@@ -1,0 +1,9 @@
+---
+- name: Cambiar contraseña del usuario mantenimiento en todas las máquinas
+  hosts: all
+  become: yes
+  tasks:
+    - name: Cambiar contraseña del usuario mantenimiento
+      user:
+        name: mantenimiento
+        password: "{{ nueva_pass }}"
