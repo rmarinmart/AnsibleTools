@@ -2,8 +2,101 @@
 - name: Cambiar contraseña del usuario mantenimiento en todas las máquinas
   hosts: all
   become: yes
+
   tasks:
+    - name: Comprobar si existe /var/ansible/passVersion
+      stat:
+        path: /var/ansible/passVersion
+      register: passfile
+
+    - name: Leer contenido de /var/ansible/passVersion si existe
+      slurp:
+        src: /var/ansible/passVersion
+      register: passfile_content
+      when: passfile.stat.exists
+
+    - name: Decidir si el host necesita actualización
+      set_fact:
+        necesita_actualizacion: "{{ (not passfile.stat.exists) or (passfile_content['content'] | b64decode | trim != pass_version) }}"
+
     - name: Cambiar contraseña del usuario mantenimiento
       user:
         name: mantenimiento
         password: "{{ nueva_pass }}"
+      when: necesita_actualizacion
+
+    - name: Escribir versión en /var/ansible/passVersion
+      copy:
+        dest: /var/ansible/passVersion
+        content: "{{ pass_version }}\n"
+        owner: root
+        group: root
+        mode: '0444'
+      when: necesita_actualizacion
+
+    - name: Marcar host como actualizado
+      add_host:
+        name: "{{ inventory_hostname }}"
+        groups: actualizados
+      when: necesita_actualizacion
+
+    - name: Marcar host como ya al día
+      add_host:
+        name: "{{ inventory_hostname }}"
+        groups: sin_cambios
+      when: not necesita_actualizacion
+
+# Play de resumen en localhost
+- name: Resumen de resultados
+  hosts: localhost
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Asegurar que existe el directorio de reportes
+      file:
+        path: /var/ansible/reportes
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Generar contenido del reporte
+      set_fact:
+        reporte: |
+          Hosts actualizados:
+          -------------------
+          {% for h in groups['actualizados'] | default([]) %}
+          - {{ h }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
+          {% endfor %}
+
+          Hosts sin cambios (ya estaban actualizados):
+          --------------------------------------------
+          {% for h in groups['sin_cambios'] | default([]) %}
+          - {{ h }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
+          {% endfor %}
+
+          Hosts no alcanzables:
+          ---------------------
+          {% for h in ansible_play_hosts_all if h not in groups['actualizados']|default([]) and h not in groups['sin_cambios']|default([]) %}
+          - {{ h }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
+          {% endfor %}
+
+    - name: Mostrar resumen en pantalla
+      debug:
+        msg: "{{ reporte }}"
+
+    - name: Definir ruta del reporte
+      set_fact:
+        reporte_path: "/var/ansible/reportes/cambiar_pass_{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}.log"
+
+    - name: Guardar reporte en fichero
+      copy:
+        dest: "{{ reporte_path }}"
+        content: "{{ reporte }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Mostrar ubicación del fichero de reporte
+      debug:
+        msg: "El reporte se ha guardado en {{ reporte_path }}"
