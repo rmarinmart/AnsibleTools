@@ -25,6 +25,15 @@
         password: "{{ nueva_pass }}"
       when: necesita_actualizacion
 
+    - name: Crear directorio /var/ansible si no existe
+      file:
+        path: /var/ansible
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: necesita_actualizacion
+
     - name: Escribir versión en /var/ansible/passVersion
       copy:
         dest: /var/ansible/passVersion
@@ -66,19 +75,19 @@
           Hosts actualizados:
           -------------------
           {% for h in groups['actualizados'] | default([]) %}
-          - {{ h }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
+          - {{ hostvars[h].pc_name | default(h) }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
           {% endfor %}
 
           Hosts sin cambios (ya estaban actualizados):
           --------------------------------------------
           {% for h in groups['sin_cambios'] | default([]) %}
-          - {{ h }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
+          - {{ hostvars[h].pc_name | default(h) }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
           {% endfor %}
 
           Hosts no alcanzables:
           ---------------------
           {% for h in ansible_play_hosts_all if h not in groups['actualizados']|default([]) and h not in groups['sin_cambios']|default([]) %}
-          - {{ h }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
+          - {{ hostvars[h].pc_name | default(h) }} ({{ (hostvars[h].group_names | difference(['all']))[0] | default('desconocido') }})
           {% endfor %}
 
     - name: Mostrar resumen en pantalla
