@@ -83,9 +83,14 @@ def generar_inventario_ansible(ruta_csv, ruta_salida='hosts'):
                     f_out.write(f"{sanitize(subgrupo)}\n")
                 f_out.write("\n")
 
+        f_out.write("[local]\n")
+        f_out.write("localhost ansible_connection=local\n")
+        f_out.write("\n")
+
         # Añadir sección [all:vars] al final
         f_out.write("[all:vars]\n")
         f_out.write("ansible_python_interpreter=/usr/bin/python3\n")
+        f_out.write("\n")
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2:
