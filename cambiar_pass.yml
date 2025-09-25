@@ -1,6 +1,6 @@
 ---
 - name: Cambiar contraseña del usuario mantenimiento en todas las máquinas
-  hosts: all
+  hosts: all:!localhost
   become: yes
 
   tasks:
