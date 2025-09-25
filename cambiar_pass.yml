@@ -92,7 +92,8 @@
 
     - name: Mostrar resumen en pantalla
       debug:
-        msg: "{{ reporte }}"
+        msg: |
+          {{ reporte }}
 
     - name: Definir ruta del reporte
       set_fact:
