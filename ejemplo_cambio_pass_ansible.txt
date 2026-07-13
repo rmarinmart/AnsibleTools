@@ -1,0 +1,1 @@
+sudo ansible-playbook cambiar_pass.yml -l g_2smr_a_fila4
