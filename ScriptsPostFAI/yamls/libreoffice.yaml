@@ -1,0 +1,11 @@
+---
+- name: Instalar Libreoffice 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar libreoffice 
+      ansible.builtin.apt:
+        name: 
+           - libreoffice
+           - libreoffice-l10n-es

@@ -1,0 +1,10 @@
+---
+- name: Instalar CCrypt 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar CCrypt 
+      ansible.builtin.apt:
+        name: 
+           - ccrypt

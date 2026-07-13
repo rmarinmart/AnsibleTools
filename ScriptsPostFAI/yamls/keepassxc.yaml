@@ -1,0 +1,8 @@
+---
+- name: Instalar keypassxc
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar
+      ansible.builtin.script: ../bashscripts/keepassxc.sh

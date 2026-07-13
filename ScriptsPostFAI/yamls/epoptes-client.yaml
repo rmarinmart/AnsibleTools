@@ -1,0 +1,13 @@
+---
+- name: Instalar epoptes client y configurarlo 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar epoptes-client 
+      ansible.builtin.apt:
+        name: 
+           - epoptes-client
+
+    - name: Configurar
+      ansible.builtin.script: ../bashscripts/configure-epoptes.sh

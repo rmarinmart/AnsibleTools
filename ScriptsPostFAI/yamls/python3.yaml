@@ -1,0 +1,10 @@
+---
+- name: Instalar Python3 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar 
+      ansible.builtin.apt:
+        name: 
+           - python3

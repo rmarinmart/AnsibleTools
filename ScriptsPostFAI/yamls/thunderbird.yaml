@@ -1,0 +1,11 @@
+---
+- name: Instalar Thunderbird 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar 
+      ansible.builtin.apt:
+        name: 
+           - thunderbird
+           - thunderbird-locale-es

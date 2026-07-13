@@ -1,0 +1,5 @@
+- name: vim
+  import_playbook: ../yamls/vim.yaml
+- name: epoptes
+  import_playbook: ../yamls/epoptes-client.yaml
+

@@ -1,0 +1,10 @@
+---
+- name: Instalar Inkscape 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar 
+      ansible.builtin.apt:
+        name: 
+           - inkscape

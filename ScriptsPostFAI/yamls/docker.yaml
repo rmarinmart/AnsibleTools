@@ -1,0 +1,8 @@
+---
+- name: Instalar Docker 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar
+      ansible.builtin.script: ../bashscripts/docker.sh

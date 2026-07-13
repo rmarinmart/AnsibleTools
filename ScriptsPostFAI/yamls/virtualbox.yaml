@@ -1,0 +1,8 @@
+---
+- name: Instalar Virtualbox 7 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar
+      ansible.builtin.script: ../bashscripts/virtualbox.sh

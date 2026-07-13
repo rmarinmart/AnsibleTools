@@ -1,0 +1,1 @@
+sudo ansible-playbook -l pc11_dam_2 masters/ejemplo_master.yaml

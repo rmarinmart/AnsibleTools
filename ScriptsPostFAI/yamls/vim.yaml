@@ -1,0 +1,10 @@
+---
+- name: Instalar VIM 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar vim 
+      ansible.builtin.apt:
+        name: 
+           - vim
