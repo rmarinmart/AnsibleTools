@@ -1,0 +1,10 @@
+---
+- name: Instalar filezilla
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar filezilla
+      ansible.builtin.apt:
+        name: 
+           - filezilla

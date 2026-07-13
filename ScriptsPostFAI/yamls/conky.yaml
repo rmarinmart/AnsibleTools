@@ -1,0 +1,10 @@
+---
+- name: Instalar Conky 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Conky 
+      ansible.builtin.apt:
+        name: 
+           - conky-all

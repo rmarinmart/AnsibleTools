@@ -1,0 +1,10 @@
+---
+- name: Instalar VLC 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar vlc 
+      ansible.builtin.apt:
+        name: 
+           - vlc

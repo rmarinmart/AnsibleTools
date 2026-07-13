@@ -1,0 +1,10 @@
+---
+- name: Instalar Openshot 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Openshot 
+      ansible.builtin.apt:
+        name: 
+           - openshot-qt

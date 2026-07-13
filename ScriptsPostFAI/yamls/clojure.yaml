@@ -1,0 +1,10 @@
+---
+- name: Instalar Clojure 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Clojure 
+      ansible.builtin.apt:
+        name: 
+           - clojure

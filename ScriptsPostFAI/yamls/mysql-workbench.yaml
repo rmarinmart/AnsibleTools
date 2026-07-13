@@ -1,0 +1,10 @@
+---
+- name: Instalar Mysql Workbench 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Mysql Workbench 
+      ansible.builtin.apt:
+        name: 
+           - mysql-workbench-community

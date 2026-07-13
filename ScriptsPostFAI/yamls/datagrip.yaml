@@ -1,0 +1,10 @@
+- name: Instalar DataGrip mediante Snap
+  hosts: all:!localhost
+  become: yes
+  
+  tasks:
+    - name: Instalar JetBrains DataGrip con confinamiento clásico
+      community.general.snap:
+        name: datagrip
+        state: present
+        classic: true

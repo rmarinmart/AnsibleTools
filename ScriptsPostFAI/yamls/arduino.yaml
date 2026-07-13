@@ -1,0 +1,10 @@
+---
+- name: Instalar Arduino 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Arduino 
+      ansible.builtin.apt:
+        name: 
+           - arduino

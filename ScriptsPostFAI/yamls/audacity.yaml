@@ -1,0 +1,10 @@
+---
+- name: Instalar Audacity 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Audacity 
+      ansible.builtin.apt:
+        name: 
+           - audacity

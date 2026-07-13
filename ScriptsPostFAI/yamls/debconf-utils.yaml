@@ -1,0 +1,10 @@
+---
+- name: Instalar Debconf utils 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Debconf utils 
+      ansible.builtin.apt:
+        name: 
+           - debconf-utils

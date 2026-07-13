@@ -1,0 +1,10 @@
+---
+- name: Instalar Leiningen 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Leiningen 
+      ansible.builtin.apt:
+        name: 
+           - leiningen

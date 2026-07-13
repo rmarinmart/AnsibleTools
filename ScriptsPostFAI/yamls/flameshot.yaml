@@ -1,0 +1,10 @@
+---
+- name: Instalar flameshot
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar flameshot
+      ansible.builtin.apt:
+        name: 
+           - flameshot

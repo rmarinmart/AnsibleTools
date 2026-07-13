@@ -1,0 +1,10 @@
+---
+- name: Instalar Umbrello 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Umbrello
+      ansible.builtin.apt:
+        name: 
+           - umbrello

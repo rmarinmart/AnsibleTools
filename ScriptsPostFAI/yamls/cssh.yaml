@@ -1,0 +1,10 @@
+---
+- name: Instalar CSSH 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar CSSH 
+      ansible.builtin.apt:
+        name: 
+           - clusterssh

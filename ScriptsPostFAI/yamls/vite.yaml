@@ -1,0 +1,10 @@
+---
+- name: Instalar Vite 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Vite 
+      ansible.builtin.apt:
+        name: 
+           - vite

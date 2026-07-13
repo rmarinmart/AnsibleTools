@@ -1,0 +1,11 @@
+---
+- name: Instalar Junit 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Junit 
+      ansible.builtin.apt:
+        name: 
+           - junit
+           - junit-doc

@@ -1,0 +1,10 @@
+---
+- name: Instalar Remmina 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Remmina
+      ansible.builtin.apt:
+        name: 
+           - remmina

@@ -1,0 +1,5 @@
+- name: Copiar el archivo .deb desde el controlador de Ansible
+  ansible.builtin.copy:
+    src: "files/mi-software.deb"  # Ruta dentro de tu repositorio
+    dest: "/tmp/mi-software.deb"
+    mode: '0644'

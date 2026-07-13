@@ -1,0 +1,10 @@
+---
+- name: Instalar Virt Viewer 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Virt Viewer 
+      ansible.builtin.apt:
+        name: 
+           - virt-viewer

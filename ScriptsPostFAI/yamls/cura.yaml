@@ -1,4 +1,4 @@
-- name: Install Handbrake
+- name: Install Ultimaker Cura System-Wide
   hosts: all:!localhost
   become: yes
 
@@ -10,8 +10,8 @@
         flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
         method: system
 
-    - name: Install Handbrake Flatpak
+    - name: Install Ultimaker Cura Flatpak
       community.general.flatpak:
-        name: fr.handbrake.ghb
+        name: com.ultimaker.cura
         state: present
         method: system

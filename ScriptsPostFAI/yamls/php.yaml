@@ -1,0 +1,10 @@
+---
+- name: Instalar Php 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar php
+      ansible.builtin.apt:
+        name: 
+           - php

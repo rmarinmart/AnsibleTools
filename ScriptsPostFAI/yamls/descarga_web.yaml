@@ -1,0 +1,5 @@
+- name: Descargar un archivo 
+  ansible.builtin.get_url:
+    url: "http://tu-servidor-web/paquetes/mi-software.deb"
+    dest: "/tmp/mi-software.deb"
+    mode: '0644'

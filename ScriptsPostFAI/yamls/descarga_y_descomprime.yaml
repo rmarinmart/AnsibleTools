@@ -1,0 +1,5 @@
+- name: Descargar y descomprimir un archivo .zip
+  ansible.builtin.unarchive:
+    src: "http://tu-servidor-web/archivos/mi-software.zip"
+    dest: "/opt/mi-software"
+    remote_src: yes

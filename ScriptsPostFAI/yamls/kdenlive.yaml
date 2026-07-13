@@ -1,0 +1,10 @@
+---
+- name: Instalar KDEEnlive 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar KDEEnlive 
+      ansible.builtin.apt:
+        name: 
+           - kdenlive

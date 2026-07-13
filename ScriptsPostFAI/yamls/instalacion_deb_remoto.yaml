@@ -1,0 +1,3 @@
+- name: Instalar un paquete .deb desde una URL
+  ansible.builtin.apt:
+    deb: "http://tu-servidor-web/paquetes/mi-software.deb"

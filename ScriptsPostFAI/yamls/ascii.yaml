@@ -1,0 +1,10 @@
+---
+- name: Instalar Ascii 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Ascii 
+      ansible.builtin.apt:
+        name: 
+           - ascii
