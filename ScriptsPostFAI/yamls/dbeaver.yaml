@@ -1,0 +1,9 @@
+---
+- name: Instalar DBeaver
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar DBeaver
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/dbeaver-ce-26.1.2-linux-x86_64.deb"
