@@ -1,0 +1,9 @@
+---
+- name: Instalar packet tracer
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar packet tracer
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/CiscoPacketTracer_900_Ubuntu_64bit.deb"
