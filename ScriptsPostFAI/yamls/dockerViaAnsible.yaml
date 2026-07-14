@@ -38,9 +38,17 @@
         mode: "0755"
 
     - name: Descargar la clave GPG oficial de Docker
-      get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: "{{ docker_keyring_path }}"
+      # Se usa curl en vez del módulo get_url por un bug conocido de ansible-core
+      # en Python 3.12+ (HTTPSConnection.__init__() got an unexpected keyword
+      # argument 'cert_file'). Si actualizas ansible-core a >=2.16.3 puedes
+      # volver a usar el módulo get_url si lo prefieres.
+      command: "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o {{ docker_keyring_path }}"
+      args:
+        creates: "{{ docker_keyring_path }}"
+
+    - name: Asegurar permisos de lectura para todos en la clave GPG
+      file:
+        path: "{{ docker_keyring_path }}"
         mode: "0644"
 
     - name: Obtener la arquitectura de dpkg
