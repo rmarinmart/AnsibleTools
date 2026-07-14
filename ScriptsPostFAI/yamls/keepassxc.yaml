@@ -3,13 +3,13 @@
 #
 # Uso:
 #   ansible-playbook install_keepassxc.yml -i inventario
- 
+
 - name: Instalar KeepassXC desde PPA
-  hosts: all:!localhost
+  hosts: all
   become: true
   vars:
     keepassxc_ppa: "ppa:phoerious/keepassxc"
- 
+
   tasks:
     - name: Asegurar herramientas para gestionar PPAs (add-apt-repository)
       apt:
@@ -17,13 +17,13 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
- 
+
     - name: Comprobar si el PPA de KeepassXC ya está añadido
       shell: "grep -rhE '^deb .*phoerious/keepassxc' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null"
       register: keepassxc_ppa_check
       changed_when: false
       failed_when: false
- 
+
     - name: Añadir el PPA de KeepassXC
       # Se usa add-apt-repository directamente en vez del módulo apt_repository
       # por el mismo bug conocido de ansible-core en Python 3.12+ (ver tareas de
@@ -33,22 +33,25 @@
       command: "add-apt-repository -y {{ keepassxc_ppa }}"
       when: keepassxc_ppa_check.rc != 0
       register: keepassxc_ppa_added
- 
+
     - name: Actualizar caché de apt tras añadir el PPA
       apt:
         update_cache: true
       when: keepassxc_ppa_added.changed
- 
+
     - name: Instalar KeepassXC
       apt:
         name: keepassxc
         state: present
- 
+
     - name: Verificar versión de KeepassXC instalada
-      command: keepassxc --version
+      # No se ejecuta el binario "keepassxc --version" porque es una app gráfica
+      # (Qt) y falla sin un display X11 disponible en la sesión SSH.
+      # Se consulta el paquete instalado directamente en su lugar.
+      command: "dpkg-query -W -f='${Version}' keepassxc"
       register: keepassxc_version_output
       changed_when: false
- 
+
     - name: Mostrar versión de KeepassXC
       debug:
         msg: "KeepassXC {{ keepassxc_version_output.stdout }} instalado correctamente"
