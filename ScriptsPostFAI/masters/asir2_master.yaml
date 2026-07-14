@@ -1,0 +1,7 @@
+- import_playbook: ../yamls/packettracer.yaml
+- import_playbook: ../yamls/ccrypt.yaml
+- import_playbook: ../yamls/docker.yaml
+- import_playbook: ../yamls/notepadqq.yaml
+- import_playbook: ../yamls/kazam.yaml
+- import_playbook: ../yamls/vite.yaml
+- import_playbook: ../yamls/datagrip.yaml

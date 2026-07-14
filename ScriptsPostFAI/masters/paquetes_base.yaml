@@ -1,0 +1,13 @@
+- import_playbook: ../yamls/aptupdate.yaml
+- import_playbook: ../yamls/libreoffice.yaml
+- import_playbook: ../yamls/virtualbox.yaml
+- import_playbook: ../yamls/epoptes-client.yaml
+- import_playbook: ../yamls/epoptes-server.yaml
+- import_playbook: ../yamls/inkscape.yaml
+- import_playbook: ../yamls/gimp.yaml
+- import_playbook: ../yamls/audacity.yaml
+- import_playbook: ../yamls/vlc.yaml
+- import_playbook: ../yamls/debconf-utils.yaml
+- import_playbook: ../yamls/vim.yaml
+- import_playbook: ../yamls/cura.yaml
+- import_playbook: ../yamls/flameshot.yaml

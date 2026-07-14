@@ -1,0 +1,4 @@
+# Master playbook - FPB1
+# Actualmente no hay software específico marcado para FPB1
+# con playbook de Ansible listo (columna ANSIBLE_READY = X).
+# Añadir aquí import_playbook cuando corresponda.

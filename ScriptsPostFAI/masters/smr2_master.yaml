@@ -1,0 +1,7 @@
+- import_playbook: ../yamls/packettracer.yaml
+- import_playbook: ../yamls/thunderbird.yaml
+- import_playbook: ../yamls/visualstudiocode.yaml
+- import_playbook: ../yamls/node.yaml
+- import_playbook: ../yamls/arduino.yaml
+- import_playbook: ../yamls/conky.yaml
+- import_playbook: ../yamls/filezilla.yaml

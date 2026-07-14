@@ -1,0 +1,11 @@
+- import_playbook: ../yamls/genimotion.yaml
+- import_playbook: ../yamls/4kVideodownloader.yaml
+- import_playbook: ../yamls/4kYoutubeToMp3.yaml
+- import_playbook: ../yamls/sublime.yaml
+- import_playbook: ../yamls/handbrake.yaml
+- import_playbook: ../yamls/python3.yaml
+- import_playbook: ../yamls/visualstudiocode.yaml
+- import_playbook: ../yamls/openshot.yaml
+- import_playbook: ../yamls/chrome.yaml
+- import_playbook: ../yamls/arduino.yaml
+- import_playbook: ../yamls/kdenlive.yaml
