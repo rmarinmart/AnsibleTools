@@ -11,5 +11,5 @@
         mode: '0755' # Permisos de ejecución
     
     - name: Ejecutar instalador
-      ansible.builtin.shell: /tmp/genymotion-3.10.0-linux_x64.run
+      ansible.builtin.shell: /tmp/genymotion-3.10.0-linux_x64.run -y
       register: resultado_script
