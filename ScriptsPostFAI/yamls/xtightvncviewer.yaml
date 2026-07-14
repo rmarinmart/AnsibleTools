@@ -1,0 +1,10 @@
+---
+- name: Instalar xtight vnc viewer
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar xtightvncviewer
+      ansible.builtin.apt:
+        name: 
+           - xtightvncviewer
