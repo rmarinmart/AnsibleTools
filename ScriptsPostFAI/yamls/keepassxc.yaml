@@ -1,8 +1,39 @@
 ---
-- name: Instalar keypassxc
-  hosts: all:!localhost
-  become: yes
+# Playbook para instalar KeepassXC desde el PPA oficial de forma desatendida
+#
+# Uso:
+#   ansible-playbook install_keepassxc.yml -i inventario
+
+- name: Instalar KeepassXC desde PPA
+  hosts: all
+  become: true
+  vars:
+    keepassxc_ppa: "ppa:phoerious/keepassxc"
 
   tasks:
-    - name: Instalar
-      ansible.builtin.script: ../bashscripts/keepassxc.sh
+    - name: Asegurar herramientas para gestionar PPAs (add-apt-repository)
+      apt:
+        name: software-properties-common
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Añadir el PPA de KeepassXC
+      apt_repository:
+        repo: "{{ keepassxc_ppa }}"
+        state: present
+        update_cache: true
+
+    - name: Instalar KeepassXC
+      apt:
+        name: keepassxc
+        state: present
+
+    - name: Verificar versión de KeepassXC instalada
+      command: keepassxc --version
+      register: keepassxc_version_output
+      changed_when: false
+
+    - name: Mostrar versión de KeepassXC
+      debug:
+        msg: "KeepassXC {{ keepassxc_version_output.stdout }} instalado correctamente"
