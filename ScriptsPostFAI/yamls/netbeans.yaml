@@ -1,0 +1,9 @@
+---
+- name: Instalar NetBeans
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar NetBeans
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/apache-netbeans_25-1_all.deb"
