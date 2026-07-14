@@ -1,0 +1,87 @@
+---
+# Playbook para instalar Docker CE en Ubuntu de forma desatendida
+# (traducción del script oficial de instalación vía apt)
+#
+# Uso:
+#   ansible-playbook install_docker.yml -i inventario
+
+- name: Instalar Docker CE
+  hosts: all
+  become: true
+  vars:
+    docker_keyring_path: /etc/apt/keyrings/docker.asc
+    docker_sources_path: /etc/apt/sources.list.d/docker.sources
+    docker_packages:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+
+  tasks:
+    - name: Actualizar caché de apt
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar dependencias (ca-certificates, curl)
+      apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+
+    - name: Crear directorio /etc/apt/keyrings
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Descargar la clave GPG oficial de Docker
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: "{{ docker_keyring_path }}"
+        mode: "0644"
+
+    - name: Obtener la arquitectura de dpkg
+      command: dpkg --print-architecture
+      register: dpkg_arch
+      changed_when: false
+
+    - name: Añadir el repositorio de Docker (formato deb822)
+      copy:
+        dest: "{{ docker_sources_path }}"
+        mode: "0644"
+        content: |
+          Types: deb
+          URIs: https://download.docker.com/linux/ubuntu
+          Suites: {{ ansible_distribution_release }}
+          Components: stable
+          Architectures: {{ dpkg_arch.stdout }}
+          Signed-By: {{ docker_keyring_path }}
+      register: docker_repo
+
+    - name: Actualizar caché de apt tras añadir el repositorio
+      apt:
+        update_cache: true
+      when: docker_repo.changed
+
+    - name: Instalar Docker CE y plugins
+      apt:
+        name: "{{ docker_packages }}"
+        state: present
+
+    - name: Asegurar que el servicio Docker esté activo y habilitado
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Verificar versión de Docker instalada
+      command: docker --version
+      register: docker_version_output
+      changed_when: false
+
+    - name: Mostrar versión de Docker
+      debug:
+        msg: "{{ docker_version_output.stdout }}"
