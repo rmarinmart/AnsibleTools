@@ -11,7 +11,7 @@
 #
 # Uso:
 #   ansible-playbook install_android_studio.yml -i inventario
-
+ 
 - name: Instalar Android Studio
   hosts: all
   become: true
@@ -19,71 +19,71 @@
     android_studio_url: "http://172.30.12.180/Varios/android-studio-2024.3.2.15-linux.tar.gz"
     android_studio_archive: "/opt/downloads/android-studio-2024.3.2.15-linux.tar.gz"
     android_studio_install_dir: "/opt/android-studio"
-
+ 
   tasks:
     - name: Actualizar caché de apt
       apt:
         update_cache: true
         cache_valid_time: 3600
-
+ 
     - name: Comprobar si la arquitectura i386 ya está habilitada
       command: dpkg --print-foreign-architectures
       register: dpkg_foreign_arches
       changed_when: false
-
+ 
     - name: Habilitar arquitectura i386 (necesaria para bibliotecas de 32 bits)
       command: dpkg --add-architecture i386
       when: "'i386' not in dpkg_foreign_arches.stdout_lines"
       register: i386_added
-
+ 
     - name: Actualizar caché de apt tras habilitar i386
       apt:
         update_cache: true
       when: i386_added.changed
-
+ 
     - name: Instalar bibliotecas de 32 bits requeridas
-      # Nota: libncurses5 es un paquete obsoleto en versiones recientes de
-      # Ubuntu/Debian (sustituido por libncurses6). Si esta tarea falla con
-      # "Unable to locate package libncurses5:i386", puede que necesites
-      # quitarlo de la lista o buscar el paquete equivalente en tu distro.
+      # Nota: libncurses5 se ha excluido deliberadamente. Es un paquete obsoleto,
+      # ya no disponible en los repositorios de Ubuntu 24.04/Mint 22 y derivadas
+      # (sustituido por libncurses6). Android Studio 2024.x no lo necesita para
+      # funcionar; si usas una versión de Ubuntu/Mint más antigua donde sí exista
+      # el paquete, puedes volver a añadirlo a la lista sin problema.
       apt:
         name:
           - libc6:i386
-          - libncurses5:i386
           - libstdc++6:i386
           - lib32z1
           - libbz2-1.0:i386
         state: present
-
+ 
     - name: Crear directorio de descargas
       file:
         path: /opt/downloads
         state: directory
         mode: "0755"
-
+ 
     - name: Descargar el archivo de Android Studio
       command: "curl -fsSL {{ android_studio_url }} -o {{ android_studio_archive }}"
       args:
         creates: "{{ android_studio_archive }}"
-
+ 
     - name: Extraer Android Studio en /opt
       unarchive:
         src: "{{ android_studio_archive }}"
         dest: /opt
         remote_src: true
         creates: "{{ android_studio_install_dir }}/bin/studio.sh"
-
+ 
     - name: Asegurar permisos de lectura/ejecución para todos en Android Studio
       shell: "chmod -R a+rX {{ android_studio_install_dir }}"
       changed_when: false
-
+ 
     - name: Enlazar el lanzador de Android Studio en /usr/local/bin
       file:
         src: "{{ android_studio_install_dir }}/bin/studio.sh"
         dest: /usr/local/bin/android-studio
         state: link
         force: true
-
+ 
     - name: Crear entrada de escritorio para Android Studio
       copy:
         dest: /usr/share/applications/android-studio.desktop
@@ -99,12 +99,12 @@
           Categories=Development;IDE;
           Terminal=false
           StartupWMClass=jetbrains-studio
-
+ 
     - name: Verificar que el binario de Android Studio existe y es ejecutable
       stat:
         path: "{{ android_studio_install_dir }}/bin/studio.sh"
       register: studio_bin_stat
-
+ 
     - name: Mostrar resultado de la instalación
       debug:
         msg: >-
@@ -113,3 +113,5 @@
           Cualquier usuario puede lanzarlo con 'android-studio' o desde el
           lanzador de aplicaciones. El Setup Wizard (descarga del SDK) se
           completará la primera vez que cada usuario lo abra.
+ 
+
