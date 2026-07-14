@@ -1,0 +1,9 @@
+---
+- name: Instalar Google Chrome
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Google Chrome
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/google-chrome-stable_current_amd64.deb"
