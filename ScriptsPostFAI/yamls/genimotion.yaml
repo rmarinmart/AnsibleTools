@@ -1,0 +1,15 @@
+---
+- name: Instalar Genimotion
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Descargar script 
+      ansible.builtin.get_url:
+        url: http://172.30.12.180/Ansible/genymotion-3.10.0-linux_x64.run
+        dest: /tmp/genymotion-3.10.0-linux_x64.run
+        mode: '0755' # Permisos de ejecución
+    
+    - name: Ejecutar instalador
+      ansible.builtin.shell: /tmp/genymotion-3.10.0-linux_x64.run
+      register: resultado_script
