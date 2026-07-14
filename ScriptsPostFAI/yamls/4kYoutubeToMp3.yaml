@@ -1,0 +1,9 @@
+---
+- name: Instalar 4kYoutubeToMp3
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar 4kYoutubeToMp3
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/4kyoutubetomp3_26.2.0-1_amd64.deb"
