@@ -1,0 +1,9 @@
+---
+- name: Instalar Visual Studio Code
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Visual Studio Code
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/code_1.127.0-1782814776_amd64.deb"
