@@ -24,6 +24,7 @@
           - ca-certificates
           - curl
           - gnupg
+          - virtualbox-dkms
         state: present
 
     - name: Comprobar si la clave GPG de Oracle VirtualBox ya está instalada
