@@ -56,6 +56,18 @@
       register: dpkg_arch
       changed_when: false
 
+    - name: Obtener el codename de Ubuntu subyacente (compatible con derivadas como Linux Mint)
+      # Replica la lógica del script original: usa UBUNTU_CODENAME si existe
+      # (p.ej. en Mint apunta al Ubuntu base, "noble"), y si no, VERSION_CODENAME.
+      # No se puede usar directamente el hecho ansible_distribution_release porque
+      # en distribuciones derivadas devuelve el codename propio (p.ej. "zena" en Mint),
+      # que no existe en el repositorio de Docker.
+      shell: . /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}"
+      args:
+        executable: /bin/bash
+      register: docker_apt_codename
+      changed_when: false
+
     - name: Añadir el repositorio de Docker (formato deb822)
       copy:
         dest: "{{ docker_sources_path }}"
@@ -63,7 +75,7 @@
         content: |
           Types: deb
           URIs: https://download.docker.com/linux/ubuntu
-          Suites: {{ ansible_distribution_release }}
+          Suites: {{ docker_apt_codename.stdout }}
           Components: stable
           Architectures: {{ dpkg_arch.stdout }}
           Signed-By: {{ docker_keyring_path }}
