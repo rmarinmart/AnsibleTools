@@ -1,0 +1,10 @@
+---
+- name: Instalar NotepadQQ
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar NotepadQQ
+      ansible.builtin.apt:
+        name: 
+           - notepadqq
