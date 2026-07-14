@@ -1,0 +1,10 @@
+---
+- name: Instalar Krita
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Krita
+      ansible.builtin.apt:
+        name: 
+           - krita
