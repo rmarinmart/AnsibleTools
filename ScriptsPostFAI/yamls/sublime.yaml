@@ -1,8 +1,80 @@
 ---
+# Playbook para instalar Sublime Text de forma desatendida
+#
+# Uso:
+#   ansible-playbook install_sublime_text.yml -i inventario
+
 - name: Instalar Sublime 
   hosts: all:!localhost
   become: yes
+  vars:
+    sublime_keyring_path: /etc/apt/keyrings/sublimehq-pub.asc
+    sublime_sources_path: /etc/apt/sources.list.d/sublime-text.sources
 
   tasks:
-    - name: Instalar
-      ansible.builtin.script: ../bashscripts/sublime.sh
+    - name: Actualizar caché de apt
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar dependencias (ca-certificates, curl)
+      apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+
+    - name: Crear directorio /etc/apt/keyrings
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Descargar la clave GPG oficial de Sublime Text
+      # Se usa curl en vez del módulo get_url por el bug conocido de ansible-core
+      # en Python 3.12+ (HTTPSConnection.__init__() got an unexpected keyword
+      # argument 'cert_file'), visto ya en los playbooks de Docker y KeepassXC.
+      command: "curl -fsSL https://download.sublimetext.com/sublimehq-pub.gpg -o {{ sublime_keyring_path }}"
+      args:
+        creates: "{{ sublime_keyring_path }}"
+
+    - name: Asegurar permisos de lectura para todos en la clave GPG
+      file:
+        path: "{{ sublime_keyring_path }}"
+        mode: "0644"
+
+    - name: Añadir el repositorio de Sublime Text (formato deb822)
+      # A diferencia del repositorio de Docker, aquí la Suite no depende del
+      # codename de la distro (es fija: "apt/stable/"), así que no hay riesgo
+      # del problema visto en Docker con Linux Mint.
+      copy:
+        dest: "{{ sublime_sources_path }}"
+        mode: "0644"
+        content: |
+          Types: deb
+          URIs: https://download.sublimetext.com/
+          Suites: apt/stable/
+          Signed-By: {{ sublime_keyring_path }}
+      register: sublime_repo
+
+    - name: Actualizar caché de apt tras añadir el repositorio
+      apt:
+        update_cache: true
+      when: sublime_repo.changed
+
+    - name: Instalar Sublime Text
+      apt:
+        name: sublime-text
+        state: present
+
+    - name: Verificar versión de Sublime Text instalada
+      # No se ejecuta el binario "subl --version" porque es una app gráfica
+      # (GTK/Qt) y puede fallar sin un display X11 disponible en la sesión SSH,
+      # como ya ocurrió con KeepassXC. Se consulta el paquete instalado en su lugar.
+      command: "dpkg-query -W -f='${Version}' sublime-text"
+      register: sublime_version_output
+      changed_when: false
+
+    - name: Mostrar versión de Sublime Text
+      debug:
+        msg: "Sublime Text {{ sublime_version_output.stdout }} instalado correctamente"

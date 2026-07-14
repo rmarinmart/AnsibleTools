@@ -1,8 +1,91 @@
 ---
-- name: Instalar Virtualbox 7 
+# Playbook para instalar VirtualBox de forma desatendida
+#
+# Uso:
+#   ansible-playbook install_virtualbox.yml -i inventario
+
+- name: Instalar VirtualBox
   hosts: all:!localhost
-  become: yes
+  become: true
+  vars:
+    virtualbox_keyring_path: /usr/share/keyrings/oracle-virtualbox-2016.gpg
+    virtualbox_sources_path: /etc/apt/sources.list.d/virtualbox.list
+    virtualbox_package: virtualbox-7.2
 
   tasks:
-    - name: Instalar
-      ansible.builtin.script: ../bashscripts/virtualbox.sh
+    - name: Actualizar caché de apt
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar dependencias (ca-certificates, curl, gnupg)
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+    - name: Comprobar si la clave GPG de Oracle VirtualBox ya está instalada
+      stat:
+        path: "{{ virtualbox_keyring_path }}"
+      register: virtualbox_keyring_stat
+
+    - name: Descargar y convertir la clave GPG de Oracle VirtualBox a formato binario
+      # Se usa curl en vez del módulo get_url por el bug conocido de ansible-core
+      # en Python 3.12+ (HTTPSConnection.__init__() got an unexpected keyword
+      # argument 'cert_file'), visto ya en Docker/Sublime Text/KeepassXC.
+      # Requiere shell (no command) por el pipe entre curl y gpg.
+      shell: "curl -fsSL https://www.virtualbox.org/download/oracle_vbox_2016.asc | gpg --yes --output {{ virtualbox_keyring_path }} --dearmor"
+      args:
+        executable: /bin/bash
+      when: not virtualbox_keyring_stat.stat.exists
+
+    - name: Asegurar permisos de lectura para todos en la clave GPG
+      file:
+        path: "{{ virtualbox_keyring_path }}"
+        mode: "0644"
+
+    - name: Obtener la arquitectura de dpkg
+      command: dpkg --print-architecture
+      register: dpkg_arch
+      changed_when: false
+
+    - name: Obtener el codename de Ubuntu subyacente (compatible con derivadas como Linux Mint)
+      # Misma lógica aplicada en Docker: usa UBUNTU_CODENAME si existe (en Mint
+      # apunta al Ubuntu base, p.ej. "noble"), y si no, VERSION_CODENAME.
+      # No se usa ansible_distribution_release porque en derivadas devuelve el
+      # codename propio (p.ej. "zena" en Mint), inexistente en el repo de VirtualBox.
+      shell: . /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}"
+      args:
+        executable: /bin/bash
+      register: virtualbox_apt_codename
+      changed_when: false
+
+    - name: Añadir el repositorio de VirtualBox
+      copy:
+        dest: "{{ virtualbox_sources_path }}"
+        mode: "0644"
+        content: "deb [arch={{ dpkg_arch.stdout }} signed-by={{ virtualbox_keyring_path }}] https://download.virtualbox.org/virtualbox/debian {{ virtualbox_apt_codename.stdout }} contrib\n"
+      register: virtualbox_repo
+
+    - name: Actualizar caché de apt tras añadir el repositorio
+      apt:
+        update_cache: true
+      when: virtualbox_repo.changed
+
+    - name: Instalar VirtualBox
+      apt:
+        name: "{{ virtualbox_package }}"
+        state: present
+
+    - name: Verificar versión de VirtualBox instalada
+      # VBoxManage es una herramienta de línea de comandos, no requiere display,
+      # así que a diferencia de KeepassXC/Sublime Text sí es seguro ejecutarla.
+      command: VBoxManage --version
+      register: virtualbox_version_output
+      changed_when: false
+
+    - name: Mostrar versión de VirtualBox
+      debug:
+        msg: "VirtualBox {{ virtualbox_version_output.stdout }} instalado correctamente"
