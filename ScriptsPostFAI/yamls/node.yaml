@@ -1,0 +1,113 @@
+---
+# Playbook para instalar Node.js de forma global (para todos los usuarios)
+# usando nvm en una ubicación compartida, ejecutado como root.
+#
+# Uso:
+#   ansible-playbook install_node_global.yml -i inventario
+#
+# Ajusta node_version/nvm_version según necesites.
+
+- name: Instalar Node.js globalmente mediante nvm compartido
+  hosts: all:!localhost
+  become: true
+  vars:
+    nvm_version: "v0.40.5"
+    node_version: "26"
+    nvm_dir: "/usr/local/nvm"
+
+  tasks:
+    - name: Asegurar que curl esté instalado
+      package:
+        name: curl
+        state: present
+
+    - name: Crear directorio compartido para nvm
+      file:
+        path: "{{ nvm_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Comprobar si nvm ya está instalado
+      stat:
+        path: "{{ nvm_dir }}/nvm.sh"
+      register: nvm_installed
+
+    - name: Descargar e instalar nvm en ubicación compartida
+      shell: >
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{{ nvm_version }}/install.sh | bash
+      args:
+        creates: "{{ nvm_dir }}/nvm.sh"
+      environment:
+        NVM_DIR: "{{ nvm_dir }}"
+      when: not nvm_installed.stat.exists
+
+    - name: Comprobar si la versión de Node ya está instalada
+      shell: >
+        bash -lc 'export NVM_DIR="{{ nvm_dir }}"; \. "$NVM_DIR/nvm.sh"; nvm ls {{ node_version }} 2>/dev/null | grep -q "v{{ node_version }}"'
+      register: node_check
+      changed_when: false
+      failed_when: false
+
+    - name: Instalar Node.js {{ node_version }} vía nvm
+      shell: >
+        bash -lc 'export NVM_DIR="{{ nvm_dir }}"; \. "$NVM_DIR/nvm.sh"; nvm install {{ node_version }}'
+      when: node_check.rc != 0
+      register: node_install
+      changed_when: "'is already installed' not in node_install.stdout"
+
+    - name: Establecer Node {{ node_version }} como versión por defecto de nvm
+      shell: >
+        bash -lc 'export NVM_DIR="{{ nvm_dir }}"; \. "$NVM_DIR/nvm.sh"; nvm alias default {{ node_version }}'
+      changed_when: false
+
+    - name: Obtener la ruta real del binario de node instalado
+      shell: >
+        bash -lc 'export NVM_DIR="{{ nvm_dir }}"; \. "$NVM_DIR/nvm.sh"; nvm which {{ node_version }}'
+      register: node_bin_path
+      changed_when: false
+
+    - name: Calcular directorio bin de la versión instalada
+      set_fact:
+        node_version_bin_dir: "{{ node_bin_path.stdout | dirname }}"
+
+    - name: Asegurar permisos de lectura/ejecución para todos en el árbol de nvm
+      shell: "chmod -R a+rX {{ nvm_dir }}"
+      changed_when: false
+
+    - name: Enlazar binarios de Node (node, npm, npx, corepack) en /usr/local/bin
+      file:
+        src: "{{ node_version_bin_dir }}/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        state: link
+        force: true
+      loop:
+        - node
+        - npm
+        - npx
+        - corepack
+      register: link_result
+      failed_when: false  # corepack puede no existir en todas las versiones
+
+    - name: Configurar NVM_DIR y nvm para shells de login (opcional, para administración)
+      copy:
+        dest: /etc/profile.d/nvm.sh
+        content: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        mode: "0644"
+
+    - name: Verificar versión de Node instalada globalmente
+      command: /usr/local/bin/node -v
+      register: node_version_output
+      changed_when: false
+
+    - name: Verificar versión de npm instalada globalmente
+      command: /usr/local/bin/npm -v
+      register: npm_version_output
+      changed_when: false
+
+    - name: Mostrar versiones instaladas
+      debug:
+        msg: "Node.js {{ node_version_output.stdout }} / npm {{ npm_version_output.stdout }} disponibles globalmente en /usr/local/bin"
