@@ -1,0 +1,10 @@
+---
+- name: Instalar Kazam
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Kazam
+      ansible.builtin.apt:
+        name: 
+           - kazam
