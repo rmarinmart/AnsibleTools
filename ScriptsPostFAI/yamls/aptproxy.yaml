@@ -6,56 +6,42 @@
   vars:
     proxy_content: |
       Acquire::http::Proxy "http://172.30.12.178:3142";
-    proxy_candidates:
-      - /etc/apt/apt.conf.d/01proxy
-      - /etc/apt/apt.conf.d/02proxy
     proxy_canonical: /etc/apt/apt.conf.d/01proxy
+    proxy_legacy: /etc/apt/apt.conf.d/02proxy
 
   tasks:
-    - name: Comprobar qué ficheros candidatos existen
+    - name: Comprobar si existe el fichero legacy 02proxy
       ansible.builtin.stat:
-        path: "{{ item }}"
-      loop: "{{ proxy_candidates }}"
-      register: proxy_stats
+        path: "{{ proxy_legacy }}"
+      register: legacy_stat
 
-    - name: Quedarnos solo con los ficheros que existen
-      ansible.builtin.set_fact:
-        existing_proxy_files: "{{ proxy_stats.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+    - name: Eliminar 02proxy si existe
+      ansible.builtin.file:
+        path: "{{ proxy_legacy }}"
+        state: absent
+      when: legacy_stat.stat.exists
 
-    - name: Fallar si hay más de un fichero de proxy (estado ambiguo)
-      ansible.builtin.fail:
-        msg: >
-          Se han encontrado varios ficheros de proxy simultáneamente:
-          {{ existing_proxy_files }}. Resuélvelo manualmente antes de continuar.
-      when: existing_proxy_files | length > 1
+    - name: Comprobar si existe el fichero canónico 01proxy
+      ansible.builtin.stat:
+        path: "{{ proxy_canonical }}"
+      register: canonical_stat
 
-    - name: Leer el contenido del fichero existente (si lo hay)
+    - name: Leer el contenido de 01proxy (si existe)
       ansible.builtin.slurp:
-        path: "{{ existing_proxy_files[0] }}"
+        path: "{{ proxy_canonical }}"
       register: proxy_slurp
-      when: existing_proxy_files | length == 1
+      when: canonical_stat.stat.exists
 
-    - name: Determinar si el contenido existente es correcto
+    - name: Determinar si el contenido de 01proxy es correcto
       ansible.builtin.set_fact:
         proxy_content_ok: "{{ (proxy_slurp.content | b64decode | trim) == (proxy_content | trim) }}"
-      when: existing_proxy_files | length == 1
+      when: canonical_stat.stat.exists
 
-    - name: Corregir el fichero existente si el contenido no es correcto
-      ansible.builtin.copy:
-        dest: "{{ existing_proxy_files[0] }}"
-        content: "{{ proxy_content }}"
-        owner: root
-        group: root
-        mode: "0644"
-      when:
-        - existing_proxy_files | length == 1
-        - not proxy_content_ok
-
-    - name: Crear el fichero canónico si no existe ninguno de los dos
+    - name: Crear o corregir 01proxy si no existe o el contenido no es correcto
       ansible.builtin.copy:
         dest: "{{ proxy_canonical }}"
         content: "{{ proxy_content }}"
         owner: root
         group: root
         mode: "0644"
-      when: existing_proxy_files | length == 0
+      when: not canonical_stat.stat.exists or not proxy_content_ok
