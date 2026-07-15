@@ -1,1 +1,4 @@
 sudo ansible-playbook -l pc11_dam_2 masters/ejemplo_master.yaml
+
+# NOTA IMPORTANTE: Los playbooks deberían lanzarse desde la carpeta ScriptsPostFAI
+# IMPORTANTE 2: No te olvides del sudo!
