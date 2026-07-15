@@ -11,6 +11,11 @@
 # grub-common (que puede resetear /etc/grub.d/10_linux) y solo tocará lo
 # que haga falta.
 #
+# NOTA: el contenido de /etc/grub.d/01_password se genera embebido en este
+# mismo playbook (módulo 'copy' con 'content'), por lo que ya NO depende de
+# ningún fichero de plantilla externo (01_password_grub.j2) ni de la ruta
+# desde la que se importe/incluya este playbook.
+#
 # ------------------------------------------------------------------
 # PASOS PREVIOS (una sola vez, fuera del playbook):
 #
@@ -23,33 +28,17 @@
 #
 #      grub.pbkdf2.sha512.10000.AB12....FE90
 #
-# 2) Guardar ese hash (NO la contraseña en texto plano) en un group_vars/all:
-#
-#      ansible-vault create group_vars/all.yml
-#
-#    Contenido:
-#
-#      grub_password_hash: "grub.pbkdf2.sha512.10000.AB12....FE90"
+# 2) Guardar ese hash (NO la contraseña en texto plano) en la variable grub_password_hash de este script
 #
 # ------------------------------------------------------------------
 
 - name: Proteger GRUB con contraseña (edición/rescate) dejando el arranque normal libre
   hosts: all:!localhost
   become: true
-  
-  vars:
-    grub_admin_user: "admin"
-    # grub_password_hash: se inyecta desde group_vars (ver vars_files abajo)
- 
-  # Se carga explícitamente en vez de depender de la detección automática
-  # de group_vars/, que se resuelve relativa al playbook "de entrada" (el
-  # que se pasa a ansible-playbook), y por tanto cambia si este fichero se
-  # ejecuta directamente o se importa desde un playbook maestro en otra
-  # carpeta. inventory_dir, en cambio, siempre apunta al directorio del
-  # inventario (junto a group_vars/), así que es estable en ambos casos.
-  vars_files:
-    - "{{ inventory_dir }}/group_vars/all.yml"
 
+  vars:
+    grub_admin_user: "mantenimiento"
+    grub_password_hash: "grub.pbkdf2.sha512.10000.E6EAC4668338FC2E40F67599A7CA238A3E1DCC7CDF9210790FB0AB0BC2CADBEBED146B18E3FA0914BF4612C6E7783FA10FBF3EF9C70975636D4F7074B0CBE279.AE481F0CFD5257F519008C723B3A4DCBE386BD66F2A18CDE3708992E8FA32CEA7149080A319B5B18475B1C7B6BAFF3DB89FB81F3D09446CCFB53B0905F59E6F4"
 
   pre_tasks:
     - name: Comprobar que se ha definido el hash de la contraseña
@@ -70,12 +59,17 @@
 
   tasks:
     - name: Desplegar script de superusuario/contraseña en /etc/grub.d/01_password
-      ansible.builtin.template:
-        src: templates/01_password.grub.j2
+      ansible.builtin.copy:
         dest: /etc/grub.d/01_password
         owner: root
         group: root
         mode: "0700"
+        content: |
+          #!/bin/sh
+          exec tail -n +3 $0
+          # Gestionado por Ansible (protegerGrub.yaml) - NO editar a mano, se sobrescribe.
+          set superusers="{{ grub_admin_user }}"
+          password_pbkdf2 {{ grub_admin_user }} {{ grub_password_hash }}
       notify: Regenerar grub.cfg
 
     - name: Comprobar que existe la línea CLASS= esperada en 10_linux

@@ -1,4 +1,4 @@
-#- import_playbook: ../yamls/protegerGrub.yaml
+- import_playbook: ../yamls/protegerGrub.yaml
 - import_playbook: ../yamls/cambiar_pass.yaml
 - import_playbook: ../yamls/aptproxy.yaml
 - import_playbook: ../yamls/aptupdate.yaml
