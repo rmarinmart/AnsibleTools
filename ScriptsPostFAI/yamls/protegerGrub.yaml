@@ -23,9 +23,9 @@
 #
 #      grub.pbkdf2.sha512.10000.AB12....FE90
 #
-# 2) Guardar ese hash (NO la contraseña en texto plano) en un vault:
+# 2) Guardar ese hash (NO la contraseña en texto plano) en un group_vars/all:
 #
-#      ansible-vault create group_vars/all/vault.yml
+#      ansible-vault create group_vars/all.yml
 #
 #    Contenido:
 #
@@ -45,7 +45,7 @@
     # grub_password_hash: se inyecta desde el vault, nunca en texto plano aquí
 
   pre_tasks:
-    - name: Comprobar que se ha definido el hash de la contraseña (vault)
+    - name: Comprobar que se ha definido el hash de la contraseña
       ansible.builtin.assert:
         that:
           - grub_password_hash is defined
@@ -53,7 +53,7 @@
         fail_msg: >-
           Falta la variable 'grub_password_hash' o no tiene el formato
           esperado. Genera el hash con 'grub-mkpasswd-pbkdf2' y guárdalo en
-          un vault (ver cabecera de este playbook).
+          en group_vars (ver cabecera de este playbook).
 
     - name: Comprobar que grub-mkpasswd-pbkdf2 existe (confirma grub-common instalado)
       ansible.builtin.stat:
