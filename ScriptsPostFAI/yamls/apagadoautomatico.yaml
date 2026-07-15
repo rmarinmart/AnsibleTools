@@ -1,0 +1,15 @@
+---
+- name: Programar apagado diario del equipo
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Añadir tarea cron para apagar el equipo a las 9:30 todos los días
+      ansible.builtin.cron:
+        name: "Apagado diario"
+        minute: "30"
+        hour: "21"
+        user: root
+        job: "/sbin/shutdown -h now"
+        cron_file: apagado_diario
+        state: present

@@ -1,4 +1,5 @@
 - import_playbook: ../yamls/aptupdate.yaml
+- import_playbook: ../yamls/aptupdate.yaml
 - import_playbook: ../yamls/libreoffice.yaml
 - import_playbook: ../yamls/virtualbox.yaml
 - import_playbook: ../yamls/epoptes-client.yaml
@@ -11,3 +12,4 @@
 - import_playbook: ../yamls/vim.yaml
 - import_playbook: ../yamls/cura.yaml
 - import_playbook: ../yamls/flameshot.yaml
+- import_playbook: ../yamls/apagadoautomatico.yaml

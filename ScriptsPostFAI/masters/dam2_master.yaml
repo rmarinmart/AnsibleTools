@@ -1,3 +1,4 @@
+- import_playbook: ../yamls/aptupdate.yaml
 - import_playbook: ../yamls/mono.yaml
 - import_playbook: ../yamls/umbrello.yaml
 - import_playbook: ../yamls/tree.yaml

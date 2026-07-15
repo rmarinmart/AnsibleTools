@@ -1,3 +1,4 @@
+- import_playbook: ../yamls/aptupdate.yaml
 - import_playbook: ../yamls/packettracer.yaml
 - import_playbook: ../yamls/keepassxc.yaml
 - import_playbook: ../yamls/docker.yaml
