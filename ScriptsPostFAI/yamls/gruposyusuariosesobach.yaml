@@ -1,0 +1,38 @@
+---
+- name: Crear grupo y usuarios de alumnos
+  hosts: all
+  become: true
+
+  vars:
+    grupo_alumnos: alumnos
+    usuarios_alumnos:
+      - inf1eso1
+      - inf1eso2
+      - inf2eso1
+      - inf2eso2
+      - inf3eso1
+      - inf3eso2
+      - inf4eso1
+      - inf4eso2
+      - inf1bat1
+      - inf1bat2
+      - inf2bat1
+      - windows
+
+  tasks:
+    - name: Asegurar que existe el grupo alumnos
+      ansible.builtin.group:
+        name: "{{ grupo_alumnos }}"
+        state: present
+
+    - name: Crear usuarios de alumnos (idempotente)
+      ansible.builtin.user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        groups: "{{ grupo_alumnos }}"
+        append: true                # añade al grupo sin quitar otros grupos
+        create_home: true           # crea /home/usuario y copia /etc/skel automáticamente
+        password: "{{ item | password_hash('sha512', 65534 | random(seed=item) | string) }}"
+        state: present
+      loop: "{{ usuarios_alumnos }}"
+      no_log: true                  # evita mostrar los hashes de contraseña en el log

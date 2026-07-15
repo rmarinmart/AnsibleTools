@@ -1,4 +1,5 @@
 - import_playbook: ../yamls/aptupdate.yaml
+- import_playbook: ../yamls/gruposyusuariosesobach.yaml
 - import_playbook: ../yamls/genimotion.yaml
 - import_playbook: ../yamls/4kVideodownloader.yaml
 - import_playbook: ../yamls/4kYoutubeToMp3.yaml

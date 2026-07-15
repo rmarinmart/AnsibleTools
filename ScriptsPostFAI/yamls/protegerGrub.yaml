@@ -1,0 +1,112 @@
+---
+# protegerGrub.yaml
+#
+# Objetivo:
+#   - Definir un superusuario/contraseña (PBKDF2) en GRUB.
+#   - Dejar el arranque normal SIN contraseña (--unrestricted).
+#   - Exigir contraseña solo para: editar entradas (tecla 'e'), abrir la
+#     consola de GRUB (tecla 'c') y entrar en modo rescate/recovery.
+#
+# Idempotente: se puede volver a ejecutar tras cada 'apt upgrade' de
+# grub-common (que puede resetear /etc/grub.d/10_linux) y solo tocará lo
+# que haga falta.
+#
+# ------------------------------------------------------------------
+# PASOS PREVIOS (una sola vez, fuera del playbook):
+#
+# 1) Generar el hash de la contraseña en tu propia máquina o en el
+#    destino (requiere el paquete grub-common, ya instalado si usas GRUB):
+#
+#      grub-mkpasswd-pbkdf2
+#
+#    Te pedirá la contraseña dos veces y devolverá una línea como:
+#
+#      grub.pbkdf2.sha512.10000.AB12....FE90
+#
+# 2) Guardar ese hash (NO la contraseña en texto plano) en un vault:
+#
+#      ansible-vault create group_vars/all/vault.yml
+#
+#    Contenido:
+#
+#      grub_password_hash: "grub.pbkdf2.sha512.10000.AB12....FE90"
+#
+# 3) Ejecutar:
+#
+#      ansible-playbook harden_grub.yml -i inventario --ask-become-pass --ask-vault-pass
+# ------------------------------------------------------------------
+
+- name: Proteger GRUB con contraseña (edición/rescate) dejando el arranque normal libre
+  hosts: all:!localhost
+  become: true
+
+  vars:
+    grub_admin_user: "mantenimiento"
+    # grub_password_hash: se inyecta desde el vault, nunca en texto plano aquí
+
+  pre_tasks:
+    - name: Comprobar que se ha definido el hash de la contraseña (vault)
+      ansible.builtin.assert:
+        that:
+          - grub_password_hash is defined
+          - grub_password_hash is match('^grub\.pbkdf2\.sha512\.')
+        fail_msg: >-
+          Falta la variable 'grub_password_hash' o no tiene el formato
+          esperado. Genera el hash con 'grub-mkpasswd-pbkdf2' y guárdalo en
+          un vault (ver cabecera de este playbook).
+
+    - name: Comprobar que grub-mkpasswd-pbkdf2 existe (confirma grub-common instalado)
+      ansible.builtin.stat:
+        path: /usr/bin/grub-mkpasswd-pbkdf2
+      register: grub_mkpasswd_bin
+      failed_when: not grub_mkpasswd_bin.stat.exists
+
+  tasks:
+    - name: Desplegar script de superusuario/contraseña en /etc/grub.d/01_password
+      ansible.builtin.template:
+        src: templates/01_password.grub.j2
+        dest: /etc/grub.d/01_password
+        owner: root
+        group: root
+        mode: "0700"
+      notify: Regenerar grub.cfg
+
+    - name: Comprobar que existe la línea CLASS= esperada en 10_linux
+      ansible.builtin.command:
+        cmd: grep -Fc 'CLASS="--class gnu-linux --class gnu --class os' /etc/grub.d/10_linux
+      register: class_line_check
+      changed_when: false
+      failed_when: class_line_check.stdout | int == 0
+
+    - name: Permitir que las entradas normales arranquen sin contraseña (--unrestricted)
+      ansible.builtin.replace:
+        path: /etc/grub.d/10_linux
+        regexp: '^(CLASS="--class gnu-linux --class gnu --class os)(?!.* --unrestricted)(")$'
+        replace: '\1 --unrestricted\2'
+        backup: true
+      notify: Regenerar grub.cfg
+
+  handlers:
+    - name: Regenerar grub.cfg
+      ansible.builtin.command: update-grub
+      register: update_grub_result
+      changed_when: true
+
+  post_tasks:
+    # Estas comprobaciones se ejecutan siempre (aunque no haya habido
+    # cambios) para detectar si algo dejó grub.cfg en un estado incorrecto.
+    # Nota: los handlers se lanzan al final de 'tasks', antes de post_tasks,
+    # así que grub.cfg ya está actualizado si hubo cambios.
+    - name: Verificar que grub.cfg exige contraseña (password_pbkdf2)
+      ansible.builtin.command:
+        cmd: grep -c "password_pbkdf2 {{ grub_admin_user }}" /boot/grub/grub.cfg
+      register: pw_in_cfg
+      changed_when: false
+      failed_when: pw_in_cfg.stdout | int == 0
+
+    - name: Verificar que hay entradas marcadas como --unrestricted (arranque libre)
+      ansible.builtin.command:
+        cmd: grep -c -- '--unrestricted' /boot/grub/grub.cfg
+      register: unrestricted_in_cfg
+      changed_when: false
+      failed_when: unrestricted_in_cfg.stdout | int == 0
