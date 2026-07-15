@@ -1,0 +1,57 @@
+---
+- name: Instalar y configurar epoptes (servidor o cliente según el equipo)
+  hosts: all:!localhost
+  become: yes
+
+  vars:
+    epoptes_server_hostname: PC-01   # Nombre del equipo del profesor en el inventario
+
+  tasks:
+    - name: Determinar si este equipo es el servidor epoptes
+      ansible.builtin.set_fact:
+        es_servidor_epoptes: "{{ inventory_hostname == epoptes_server_hostname }}"
+
+    # ---------------------------------------------------------------
+    # SERVIDOR (PC-01)
+    # ---------------------------------------------------------------
+    - name: Instalar epoptes-server
+      ansible.builtin.apt:
+        name: epoptes-server
+        state: present
+      when: es_servidor_epoptes
+
+    # ---------------------------------------------------------------
+    # CLIENTES (resto de equipos)
+    # ---------------------------------------------------------------
+    - name: Instalar epoptes-client
+      ansible.builtin.apt:
+        name: epoptes-client
+        state: present
+      when: not es_servidor_epoptes
+
+    - name: Comprobar que el servidor epoptes está en algún grupo de este equipo
+      ansible.builtin.fail:
+        msg: >-
+          El host '{{ epoptes_server_hostname }}' no está en ninguno de los
+          grupos de '{{ inventory_hostname }}' ({{ group_names }}). Revisa el inventario.
+      when:
+        - not es_servidor_epoptes
+        - epoptes_server_hostname not in (group_names | map('extract', groups) | sum(start=[]))
+
+    - name: Obtener la IP fija del servidor epoptes desde el inventario
+      ansible.builtin.set_fact:
+        epoptes_server_ip: "{{ hostvars[epoptes_server_hostname].ansible_host }}"
+      when: not es_servidor_epoptes
+
+    - name: Añadir/actualizar la entrada 'server' en /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '\sserver$'
+        line: "{{ epoptes_server_ip }}\tserver"
+        state: present
+      when: not es_servidor_epoptes
+
+    - name: Configurar epoptes-client (equivalente a "epoptes-client -c")
+      ansible.builtin.command: epoptes-client -c
+      when: not es_servidor_epoptes
+      changed_when: true
