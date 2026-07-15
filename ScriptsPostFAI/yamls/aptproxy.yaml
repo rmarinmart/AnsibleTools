@@ -1,0 +1,61 @@
+---
+- name: Configurar proxy de apt en Linux Mint (tolerante a nombres legacy)
+  hosts: all
+  become: true
+
+  vars:
+    proxy_content: |
+      Acquire::http::Proxy "http://172.30.12.178:3142";
+    proxy_candidates:
+      - /etc/apt/apt.conf.d/01proxy
+      - /etc/apt/apt.conf.d/02proxy
+    proxy_canonical: /etc/apt/apt.conf.d/01proxy
+
+  tasks:
+    - name: Comprobar qué ficheros candidatos existen
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ proxy_candidates }}"
+      register: proxy_stats
+
+    - name: Quedarnos solo con los ficheros que existen
+      ansible.builtin.set_fact:
+        existing_proxy_files: "{{ proxy_stats.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+
+    - name: Fallar si hay más de un fichero de proxy (estado ambiguo)
+      ansible.builtin.fail:
+        msg: >
+          Se han encontrado varios ficheros de proxy simultáneamente:
+          {{ existing_proxy_files }}. Resuélvelo manualmente antes de continuar.
+      when: existing_proxy_files | length > 1
+
+    - name: Leer el contenido del fichero existente (si lo hay)
+      ansible.builtin.slurp:
+        path: "{{ existing_proxy_files[0] }}"
+      register: proxy_slurp
+      when: existing_proxy_files | length == 1
+
+    - name: Determinar si el contenido existente es correcto
+      ansible.builtin.set_fact:
+        proxy_content_ok: "{{ (proxy_slurp.content | b64decode | trim) == (proxy_content | trim) }}"
+      when: existing_proxy_files | length == 1
+
+    - name: Corregir el fichero existente si el contenido no es correcto
+      ansible.builtin.copy:
+        dest: "{{ existing_proxy_files[0] }}"
+        content: "{{ proxy_content }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - existing_proxy_files | length == 1
+        - not proxy_content_ok
+
+    - name: Crear el fichero canónico si no existe ninguno de los dos
+      ansible.builtin.copy:
+        dest: "{{ proxy_canonical }}"
+        content: "{{ proxy_content }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: existing_proxy_files | length == 0

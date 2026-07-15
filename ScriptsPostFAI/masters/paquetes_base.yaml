@@ -1,4 +1,4 @@
-- import_playbook: ../yamls/aptupdate.yaml
+- import_playbook: ../yamls/aptproxy.yaml
 - import_playbook: ../yamls/aptupdate.yaml
 - import_playbook: ../yamls/libreoffice.yaml
 - import_playbook: ../yamls/virtualbox.yaml
