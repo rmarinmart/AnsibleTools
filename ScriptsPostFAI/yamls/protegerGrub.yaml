@@ -31,18 +31,25 @@
 #
 #      grub_password_hash: "grub.pbkdf2.sha512.10000.AB12....FE90"
 #
-# 3) Ejecutar:
-#
-#      ansible-playbook harden_grub.yml -i inventario --ask-become-pass --ask-vault-pass
 # ------------------------------------------------------------------
 
 - name: Proteger GRUB con contraseña (edición/rescate) dejando el arranque normal libre
   hosts: all:!localhost
   become: true
-
+  
   vars:
-    grub_admin_user: "mantenimiento"
-    # grub_password_hash: se inyecta desde el vault, nunca en texto plano aquí
+    grub_admin_user: "admin"
+    # grub_password_hash: se inyecta desde group_vars (ver vars_files abajo)
+ 
+  # Se carga explícitamente en vez de depender de la detección automática
+  # de group_vars/, que se resuelve relativa al playbook "de entrada" (el
+  # que se pasa a ansible-playbook), y por tanto cambia si este fichero se
+  # ejecuta directamente o se importa desde un playbook maestro en otra
+  # carpeta. inventory_dir, en cambio, siempre apunta al directorio del
+  # inventario (junto a group_vars/), así que es estable en ambos casos.
+  vars_files:
+    - "{{ inventory_dir }}/group_vars/all.yml"
+
 
   pre_tasks:
     - name: Comprobar que se ha definido el hash de la contraseña
