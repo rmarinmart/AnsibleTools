@@ -3,6 +3,12 @@
   become: yes
   
   tasks:
+    - name: Instalar dependencias (snapd)
+      apt:
+        name:
+          - snapd
+        state: present
+
     - name: Instalar JetBrains DataGrip con confinamiento clásico
       community.general.snap:
         name: datagrip
