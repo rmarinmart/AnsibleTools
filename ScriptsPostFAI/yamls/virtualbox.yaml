@@ -11,19 +11,31 @@
     virtualbox_keyring_path: /usr/share/keyrings/oracle-virtualbox-2016.gpg
     virtualbox_sources_path: /etc/apt/sources.list.d/virtualbox.list
     virtualbox_package: virtualbox-7.2
+    # Fichero local (en el nodo de control) donde se listan los equipos que
+    # necesitan enrolar manualmente la clave MOK para poder cargar vboxdrv.
+    virtualbox_secureboot_report_path: "./informe_secureboot_pendiente.txt"
 
   tasks:
+    - name: Reiniciar el informe de equipos pendientes de Secure Boot
+      copy:
+        dest: "{{ virtualbox_secureboot_report_path }}"
+        content: ""
+        force: true
+      delegate_to: localhost
+      run_once: true
+
     - name: Actualizar caché de apt
       apt:
         update_cache: true
         cache_valid_time: 3600
 
-    - name: Instalar dependencias (ca-certificates, curl, gnupg)
+    - name: Instalar dependencias (ca-certificates, curl, gnupg, mokutil)
       apt:
         name:
           - ca-certificates
           - curl
           - gnupg
+          - mokutil # Necesario para comprobar el estado de Secure Boot
         state: present
 
     - name: Comprobar si la clave GPG de Oracle VirtualBox ya está instalada
@@ -89,3 +101,73 @@
     - name: Mostrar versión de VirtualBox
       debug:
         msg: "VirtualBox {{ virtualbox_version_output.stdout }} instalado correctamente"
+
+    - name: Comprobar si el servicio vboxdrv está activo
+      # Si vboxdrv no arranca, VirtualBox no podrá lanzar ninguna VM aunque
+      # el paquete se haya instalado correctamente.
+      command: systemctl is-active vboxdrv
+      register: virtualbox_drv_status
+      changed_when: false
+      failed_when: false
+
+    - name: Comprobar el estado de Secure Boot (mokutil)
+      command: mokutil --sb-state
+      register: virtualbox_secureboot_check
+      changed_when: false
+      failed_when: false
+
+    - name: Determinar si el equipo necesita enrolado manual de la clave MOK
+      set_fact:
+        virtualbox_needs_mok_enrollment: >-
+          {{ virtualbox_drv_status.stdout != 'active'
+             and 'SecureBoot enabled' in virtualbox_secureboot_check.stdout }}
+
+    - name: "AVISO: este equipo requiere firmar/enrolar la clave MOK manualmente"
+      debug:
+        msg: >
+          Secure Boot está activo y el módulo vboxdrv no ha podido cargarse
+          (sin firmar). Habrá que ejecutar 'sudo /sbin/vboxconfig' y, en el
+          siguiente arranque, aprobar el enrolado de la clave MOK desde el
+          menú azul (MOK Manager) tecleando la contraseña que se establezca.
+          Alternativa: desactivar Secure Boot en la BIOS de este equipo si es
+          posible.
+      when: virtualbox_needs_mok_enrollment
+
+    - name: Añadir este equipo al informe de pendientes de Secure Boot
+      lineinfile:
+        path: "{{ virtualbox_secureboot_report_path }}"
+        line: "{{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }})"
+        create: true
+      delegate_to: localhost
+      when: virtualbox_needs_mok_enrollment
+
+    - name: Fallar la tarea si vboxdrv sigue sin estar activo por Secure Boot
+      # No detiene el resto del playbook en otros hosts (ver 'any_errors_fatal'
+      # más abajo si se prefiere cortar toda la ejecución), pero deja constancia
+      # clara en la salida de ansible de qué equipo necesita intervención.
+      fail:
+        msg: >
+          vboxdrv no está activo en {{ inventory_hostname }} por Secure Boot.
+          Revisa {{ virtualbox_secureboot_report_path }} para el listado
+          completo de equipos pendientes tras esta ejecución.
+      when: virtualbox_needs_mok_enrollment
+
+- name: Mostrar resumen final de equipos pendientes de Secure Boot
+  hosts: localhost
+  gather_facts: false
+  vars:
+    virtualbox_secureboot_report_path: "./informe_secureboot_pendiente.txt"
+  tasks:
+    - name: Leer el informe generado
+      slurp:
+        src: "{{ virtualbox_secureboot_report_path }}"
+      register: virtualbox_report_raw
+      failed_when: false
+
+    - name: Mostrar el resumen
+      debug:
+        msg: >-
+          {{ (virtualbox_report_raw.content | b64decode).splitlines()
+             if virtualbox_report_raw.content is defined and
+                (virtualbox_report_raw.content | b64decode | trim) != ''
+             else 'Ningún equipo pendiente de enrolado manual de Secure Boot.' }}

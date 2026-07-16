@@ -11,6 +11,6 @@
 - import_playbook: ../yamls/vlc.yaml
 - import_playbook: ../yamls/debconf-utils.yaml
 - import_playbook: ../yamls/vim.yaml
-- import_playbook: ../yamls/cura.yaml
+#- import_playbook: ../yamls/cura.yaml
 - import_playbook: ../yamls/flameshot.yaml
 - import_playbook: ../yamls/apagadoautomatico.yaml
