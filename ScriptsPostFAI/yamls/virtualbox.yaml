@@ -113,23 +113,62 @@
       changed_when: false
       failed_when: false
 
-    - name: Reconfigurar el módulo de VirtualBox (vboxconfig) si vboxdrv no está activo
+    - name: Comprobar el estado de Secure Boot (mokutil)
+      # Se comprueba ANTES de intentar vboxconfig: si Secure Boot está activo
+      # y vboxdrv no ha cargado, ya sabemos que vboxconfig va a intentar
+      # generar y enrolar una clave MOK, lo cual exige una contraseña
+      # interactiva (mokutil --import lee de /dev/tty, ignora stdin) y se
+      # queda colgado en un playbook desatendido. Mejor no lanzarlo siquiera.
+      command: mokutil --sb-state
+      register: virtualbox_secureboot_check
+      changed_when: false
+      failed_when: false
+      when: virtualbox_drv_status.stdout != 'active'
+
+    - name: Determinar si Secure Boot está activo
+      set_fact:
+        virtualbox_secureboot_enabled: >-
+          {{ virtualbox_drv_status.stdout != 'active'
+             and 'SecureBoot enabled' in (virtualbox_secureboot_check.stdout | default('')) }}
+
+    - name: Reconfigurar el módulo de VirtualBox (vboxconfig) si vboxdrv no está activo y Secure Boot está desactivado
       # Cubre el caso típico de Secure Boot desactivado pero DKMS no compiló
       # bien en la instalación (p.ej. porque faltaban las cabeceras del kernel,
-      # ya solucionado en la tarea anterior). Si el bloqueo es por Secure Boot,
-      # este comando fallará igualmente y quedará reflejado más abajo.
-      command: /sbin/vboxconfig
+      # ya solucionado en la tarea anterior). No se lanza si Secure Boot está
+      # activo (ver comprobación anterior): en ese caso el problema es de
+      # firma/enrolado y requiere intervención manual, así que evitamos el
+      # riesgo de que se quede colgado esperando una contraseña que nunca
+      # llegará. El timeout se mantiene como red de seguridad adicional por
+      # si la compilación de DKMS se alarga o se atasca por otro motivo.
+      command: timeout 60 /sbin/vboxconfig
       register: virtualbox_vboxconfig_result
       changed_when: "'done.' in virtualbox_vboxconfig_result.stdout"
       failed_when: false
-      when: virtualbox_drv_status.stdout != 'active'
+      when:
+        - virtualbox_drv_status.stdout != 'active'
+        - not virtualbox_secureboot_enabled
+
+    - name: "AVISO: vboxconfig se agotó por timeout"
+      debug:
+        msg: >
+          vboxconfig no terminó en 60s a pesar de que Secure Boot está
+          desactivado. Puede tratarse de una compilación DKMS especialmente
+          lenta o de un problema distinto; revisa manualmente con
+          'sudo dkms status' y 'cat /var/log/vbox-install.log' en este equipo.
+      when: >
+        virtualbox_drv_status.stdout != 'active'
+        and not virtualbox_secureboot_enabled
+        and virtualbox_vboxconfig_result.rc is defined
+        and virtualbox_vboxconfig_result.rc == 124
 
     - name: Volver a comprobar el servicio vboxdrv tras vboxconfig
       command: systemctl is-active vboxdrv
       register: virtualbox_drv_status_retry
       changed_when: false
       failed_when: false
-      when: virtualbox_drv_status.stdout != 'active'
+      when:
+        - virtualbox_drv_status.stdout != 'active'
+        - not virtualbox_secureboot_enabled
 
     - name: Consolidar el estado final de vboxdrv
       set_fact:
@@ -137,21 +176,12 @@
           {{ virtualbox_drv_status.stdout == 'active'
              or (virtualbox_drv_status_retry.stdout | default('')) == 'active' }}
 
-    - name: Comprobar el estado de Secure Boot (mokutil)
-      command: mokutil --sb-state
-      register: virtualbox_secureboot_check
-      changed_when: false
-      failed_when: false
-      when: not virtualbox_drv_active
-
     - name: Determinar si el equipo necesita enrolado manual de la clave MOK
       set_fact:
         virtualbox_needs_mok_enrollment: >-
-          {{ not virtualbox_drv_active
-             and 'SecureBoot enabled' in (virtualbox_secureboot_check.stdout | default('')) }}
+          {{ not virtualbox_drv_active and virtualbox_secureboot_enabled }}
         virtualbox_needs_investigation: >-
-          {{ not virtualbox_drv_active
-             and 'SecureBoot enabled' not in (virtualbox_secureboot_check.stdout | default('')) }}
+          {{ not virtualbox_drv_active and not virtualbox_secureboot_enabled }}
 
     - name: "AVISO: este equipo requiere firmar/enrolar la clave MOK manualmente"
       debug:
