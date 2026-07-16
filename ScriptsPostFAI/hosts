@@ -541,7 +541,7 @@ pc32_asir_2 ansible_host=10.116.64.147 pc_name=PC32
 pc33_asir_2 ansible_host=10.116.64.148 pc_name=PC33
 pc34_asir_2 ansible_host=10.116.64.149 pc_name=PC34
 pc35_asir_2 ansible_host=10.116.64.150 pc_name=PC35
-pc36_asir_2 ansible_host=10.116.64.175 pc_name=PC36
+pc36_asir_2 ansible_host=10.116.64.176 pc_name=PC36
 
 [asir_2_fila0]
 pc01_asir_2 ansible_host=10.116.64.189 pc_name=PC01
@@ -572,7 +572,7 @@ pc32_asir_2 ansible_host=10.116.64.147 pc_name=PC32
 pc33_asir_2 ansible_host=10.116.64.148 pc_name=PC33
 pc34_asir_2 ansible_host=10.116.64.149 pc_name=PC34
 pc35_asir_2 ansible_host=10.116.64.150 pc_name=PC35
-pc36_asir_2 ansible_host=10.116.64.175 pc_name=PC36
+pc36_asir_2 ansible_host=10.116.64.176 pc_name=PC36
 
 [asir_2:children]
 asir_2_fila0
