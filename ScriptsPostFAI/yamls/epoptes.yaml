@@ -23,6 +23,14 @@
         state: present
       when: es_servidor_epoptes
  
+     - name: Añadir el usuario mantenimiento al grupo epoptes
+      ansible.builtin.user:
+        name: mantenimiento
+        groups: epoptes
+        append: yes
+      when: es_servidor_epoptes
+
+
     # ---------------------------------------------------------------
     # CLIENTES (resto de equipos)
     # ---------------------------------------------------------------
