@@ -102,25 +102,56 @@
       debug:
         msg: "VirtualBox {{ virtualbox_version_output.stdout }} instalado correctamente"
 
+    - name: Instalar cabeceras del kernel en ejecución (necesarias para DKMS)
+      apt:
+        name: "linux-headers-{{ ansible_kernel }}"
+        state: present
+
     - name: Comprobar si el servicio vboxdrv está activo
-      # Si vboxdrv no arranca, VirtualBox no podrá lanzar ninguna VM aunque
-      # el paquete se haya instalado correctamente.
       command: systemctl is-active vboxdrv
       register: virtualbox_drv_status
       changed_when: false
       failed_when: false
+
+    - name: Reconfigurar el módulo de VirtualBox (vboxconfig) si vboxdrv no está activo
+      # Cubre el caso típico de Secure Boot desactivado pero DKMS no compiló
+      # bien en la instalación (p.ej. porque faltaban las cabeceras del kernel,
+      # ya solucionado en la tarea anterior). Si el bloqueo es por Secure Boot,
+      # este comando fallará igualmente y quedará reflejado más abajo.
+      command: /sbin/vboxconfig
+      register: virtualbox_vboxconfig_result
+      changed_when: "'done.' in virtualbox_vboxconfig_result.stdout"
+      failed_when: false
+      when: virtualbox_drv_status.stdout != 'active'
+
+    - name: Volver a comprobar el servicio vboxdrv tras vboxconfig
+      command: systemctl is-active vboxdrv
+      register: virtualbox_drv_status_retry
+      changed_when: false
+      failed_when: false
+      when: virtualbox_drv_status.stdout != 'active'
+
+    - name: Consolidar el estado final de vboxdrv
+      set_fact:
+        virtualbox_drv_active: >-
+          {{ virtualbox_drv_status.stdout == 'active'
+             or (virtualbox_drv_status_retry.stdout | default('')) == 'active' }}
 
     - name: Comprobar el estado de Secure Boot (mokutil)
       command: mokutil --sb-state
       register: virtualbox_secureboot_check
       changed_when: false
       failed_when: false
+      when: not virtualbox_drv_active
 
     - name: Determinar si el equipo necesita enrolado manual de la clave MOK
       set_fact:
         virtualbox_needs_mok_enrollment: >-
-          {{ virtualbox_drv_status.stdout != 'active'
-             and 'SecureBoot enabled' in virtualbox_secureboot_check.stdout }}
+          {{ not virtualbox_drv_active
+             and 'SecureBoot enabled' in (virtualbox_secureboot_check.stdout | default('')) }}
+        virtualbox_needs_investigation: >-
+          {{ not virtualbox_drv_active
+             and 'SecureBoot enabled' not in (virtualbox_secureboot_check.stdout | default('')) }}
 
     - name: "AVISO: este equipo requiere firmar/enrolar la clave MOK manualmente"
       debug:
@@ -133,24 +164,41 @@
           posible.
       when: virtualbox_needs_mok_enrollment
 
+    - name: "AVISO: vboxdrv no carga por un motivo distinto a Secure Boot"
+      debug:
+        msg: >
+          Secure Boot no está activo, pero vboxdrv sigue sin cargar tras
+          'vboxconfig'. Revisa manualmente con 'sudo dkms status' y
+          'dmesg | grep -i vbox' en este equipo; puede tratarse de un
+          problema de compilación no relacionado con la firma del módulo.
+      when: virtualbox_needs_investigation
+
     - name: Añadir este equipo al informe de pendientes de Secure Boot
       lineinfile:
         path: "{{ virtualbox_secureboot_report_path }}"
-        line: "{{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }})"
+        line: "{{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }}) - Secure Boot activo, pendiente de enrolado MOK"
         create: true
       delegate_to: localhost
       when: virtualbox_needs_mok_enrollment
 
-    - name: Fallar la tarea si vboxdrv sigue sin estar activo por Secure Boot
-      # No detiene el resto del playbook en otros hosts (ver 'any_errors_fatal'
-      # más abajo si se prefiere cortar toda la ejecución), pero deja constancia
-      # clara en la salida de ansible de qué equipo necesita intervención.
+    - name: Añadir este equipo al informe como pendiente de revisión manual
+      lineinfile:
+        path: "{{ virtualbox_secureboot_report_path }}"
+        line: "{{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }}) - vboxdrv no carga, NO es Secure Boot, revisar manualmente"
+        create: true
+      delegate_to: localhost
+      when: virtualbox_needs_investigation
+
+    - name: Fallar la tarea si vboxdrv no está activo tras todos los intentos
+      # No detiene el resto del playbook en otros hosts (estrategia linear por
+      # defecto de Ansible), pero deja constancia clara en la salida de
+      # ansible de qué equipo necesita intervención.
       fail:
         msg: >
-          vboxdrv no está activo en {{ inventory_hostname }} por Secure Boot.
+          vboxdrv no está activo en {{ inventory_hostname }}.
           Revisa {{ virtualbox_secureboot_report_path }} para el listado
           completo de equipos pendientes tras esta ejecución.
-      when: virtualbox_needs_mok_enrollment
+      when: not virtualbox_drv_active
 
 - name: Mostrar resumen final de equipos pendientes de Secure Boot
   hosts: localhost
