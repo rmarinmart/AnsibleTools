@@ -4,7 +4,7 @@
   become: yes
 
   vars:
-    epoptes_server_hostname: PC-01   # Nombre del equipo del profesor en el inventario
+    epoptes_server_hostname: PC01   # Nombre del equipo del profesor en el inventario
 
   tasks:
     - name: Determinar si este equipo es el servidor epoptes
