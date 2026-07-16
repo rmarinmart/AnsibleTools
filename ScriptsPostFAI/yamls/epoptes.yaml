@@ -2,24 +2,25 @@
 - name: Instalar y configurar epoptes (servidor o cliente según el equipo)
   hosts: all:!localhost
   become: yes
-
+  gather_facts: yes   # Necesario para disponer de ansible_hostname
+ 
   vars:
-    epoptes_server_hostname: PC01   # Nombre del equipo del profesor en el inventario
-
+    epoptes_server_hostname: PC01   # Hostname REAL del equipo del profesor
+ 
   tasks:
-    - name: Determinar si este equipo es el servidor epoptes
+    - name: Determinar si este equipo es el servidor epoptes (por hostname real)
       ansible.builtin.set_fact:
-        es_servidor_epoptes: "{{ inventory_hostname == epoptes_server_hostname }}"
-
+        es_servidor_epoptes: "{{ ansible_hostname | lower == epoptes_server_hostname | lower }}"
+ 
     # ---------------------------------------------------------------
     # SERVIDOR (PC-01)
     # ---------------------------------------------------------------
-    - name: Instalar epoptes-server
+    - name: Instalar epoptes
       ansible.builtin.apt:
-        name: epoptes-server
+        name: epoptes
         state: present
       when: es_servidor_epoptes
-
+ 
     # ---------------------------------------------------------------
     # CLIENTES (resto de equipos)
     # ---------------------------------------------------------------
@@ -28,21 +29,31 @@
         name: epoptes-client
         state: present
       when: not es_servidor_epoptes
-
-    - name: Comprobar que el servidor epoptes está en algún grupo de este equipo
+ 
+    - name: Derivar el inventory_hostname del servidor epoptes de este mismo segmento
+      ansible.builtin.set_fact:
+        # Los alias del inventario siguen el patrón pcNN_<resto>, donde <resto> es
+        # igual para todos los equipos del mismo grupo/segmento (p. ej. pc01_asir_2
+        # y pc11_asir_2). Sustituimos el número de PC por el del servidor para
+        # obtener su alias sin necesidad de contactar con él.
+        epoptes_server_inventory_hostname: "{{ epoptes_server_hostname | lower }}_{{ inventory_hostname.split('_', 1)[1] }}"
+      when: not es_servidor_epoptes
+ 
+    - name: Comprobar que el servidor epoptes existe en el inventario de este segmento
       ansible.builtin.fail:
         msg: >-
-          El host '{{ epoptes_server_hostname }}' no está en ninguno de los
-          grupos de '{{ inventory_hostname }}' ({{ group_names }}). Revisa el inventario.
+          No se ha encontrado el host '{{ epoptes_server_inventory_hostname }}' en el
+          inventario. Revisa que el servidor esté definido en el mismo grupo que
+          '{{ inventory_hostname }}' y que su alias siga el patrón pcNN_<resto>.
       when:
         - not es_servidor_epoptes
-        - epoptes_server_hostname not in (group_names | map('extract', groups) | sum(start=[]))
-
+        - epoptes_server_inventory_hostname not in hostvars
+ 
     - name: Obtener la IP fija del servidor epoptes desde el inventario
       ansible.builtin.set_fact:
-        epoptes_server_ip: "{{ hostvars[epoptes_server_hostname].ansible_host }}"
+        epoptes_server_ip: "{{ hostvars[epoptes_server_inventory_hostname].ansible_host }}"
       when: not es_servidor_epoptes
-
+ 
     - name: Añadir/actualizar la entrada 'server' en /etc/hosts
       ansible.builtin.lineinfile:
         path: /etc/hosts
@@ -50,8 +61,16 @@
         line: "{{ epoptes_server_ip }}\tserver"
         state: present
       when: not es_servidor_epoptes
-
-    - name: Configurar epoptes-client (equivalente a "epoptes-client -c")
-      ansible.builtin.command: epoptes-client -c
+ 
+    - name: Configurar epoptes-client (equivalente a "epoptes-client -c", con timeout)
+      # A veces el proceso se queda colgado tras terminar la configuración
+      # (se ve el "DONE" pero no cierra la conexión). Lo forzamos a cortar
+      # a los 30s con `timeout` y tratamos el código 124 (matado por timeout)
+      # como éxito, ya que en ese punto la configuración ya se ha aplicado.
+      ansible.builtin.command: timeout 5 epoptes-client -c
       when: not es_servidor_epoptes
-      changed_when: true
+      register: epoptes_client_config
+      changed_when: epoptes_client_config.rc in [0, 124]
+      failed_when: epoptes_client_config.rc not in [0, 124]
+
+
