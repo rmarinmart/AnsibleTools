@@ -17,7 +17,9 @@
     # ---------------------------------------------------------------
     - name: Instalar epoptes
       ansible.builtin.apt:
-        name: epoptes
+        name: 
+          - python3-setuptools
+          - epoptes
         state: present
       when: es_servidor_epoptes
  
