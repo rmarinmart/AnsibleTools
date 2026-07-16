@@ -1,8 +1,17 @@
 - name: Instalar DataGrip mediante Snap
   hosts: all:!localhost
   become: yes
-  
+
   tasks:
+    - name: Eliminar el bloqueo de snap en Linux Mint (nosnap.pref)
+      file:
+        path: /etc/apt/preferences.d/nosnap.pref
+        state: absent
+
+    - name: Actualizar caché de apt
+      apt:
+        update_cache: yes
+
     - name: Instalar dependencias (snapd)
       apt:
         name:
