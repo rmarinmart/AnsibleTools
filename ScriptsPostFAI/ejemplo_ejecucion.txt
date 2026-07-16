@@ -1,4 +1,7 @@
-sudo ansible-playbook -l pc11_dam_2 masters/ejemplo_master.yaml
+sudo ansible-playbook -i ./hosts -l pc11_dam_2 masters/ejemplo_master.yaml
+
+para comprobar ping, inventario, etc.:
+sudo ansible -i ./hosts pcc11_dam_2 -m ping
 
 # NOTA IMPORTANTE: Los playbooks deberían lanzarse desde la carpeta ScriptsPostFAI
 # IMPORTANTE 2: No te olvides del sudo!

@@ -1,5 +1,5 @@
 cd ScriptsPostFAI
-sudo ansible-playbook yamls/cambiar_pass.yml -l g_2smr_a_fila4
+sudo ansible-playbook yamls/cambiar_pass.yml -i ./hosts -l g_2smr_a_fila4
 
 # NOTA IMPORTANTE: Los playbooks deberían lanzarse desde la carpeta ScriptsPostFAI
 # IMPORTANTE 2: No te olvides del sudo!
