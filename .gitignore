@@ -1,1 +1,3 @@
 *.retry
+ScriptsPostFAI/yamls/informe_secureboot_pendiente.txt
+*.swp

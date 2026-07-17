@@ -3,7 +3,6 @@
 - import_playbook: ../yamls/aptproxy.yaml
 - import_playbook: ../yamls/aptupdate.yaml
 - import_playbook: ../yamls/libreoffice.yaml
-- import_playbook: ../yamls/virtualbox.yaml
 - import_playbook: ../yamls/epoptes.yaml
 - import_playbook: ../yamls/inkscape.yaml
 - import_playbook: ../yamls/gimp.yaml
@@ -14,3 +13,4 @@
 #- import_playbook: ../yamls/cura.yaml
 - import_playbook: ../yamls/flameshot.yaml
 - import_playbook: ../yamls/apagadoautomatico.yaml
+- import_playbook: ../yamls/virtualbox.yaml
