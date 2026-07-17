@@ -15,5 +15,5 @@
 - import_playbook: ../yamls/clojure.yaml
 - import_playbook: ../yamls/leiningen.yaml
 - import_playbook: ../yamls/tree.yaml
-- import_playbook: ../yamls/mysql-workbench.yaml
+#- import_playbook: ../yamls/mysql-workbench.yaml
 - import_playbook: ../yamls/javafx.yaml
