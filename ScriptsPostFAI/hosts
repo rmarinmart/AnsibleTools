@@ -268,12 +268,12 @@ pc32_fpb_1 ansible_host=172.30.200.203 pc_name=PC32
 pc33_fpb_1 ansible_host=172.30.200.204 pc_name=PC33
 pc34_fpb_1 ansible_host=172.30.200.205 pc_name=PC34
 pc35_fpb_1 ansible_host=172.30.200.206 pc_name=PC35
-pc36_fpb_1 ansible_host=172.30.200.227 pc_name=PC36
+pc36_fpb_1 ansible_host=172.30.200.212 pc_name=PC36
 pc41_fpb_1 ansible_host=172.30.200.207 pc_name=PC41
 pc42_fpb_1 ansible_host=172.30.200.208 pc_name=PC42
 pc43_fpb_1 ansible_host=172.30.200.209 pc_name=PC43
 pc44_fpb_1 ansible_host=172.30.200.210 pc_name=PC44
-pc45_fpb_1 ansible_host=172.30.200.228 pc_name=PC45
+pc45_fpb_1 ansible_host=172.30.200.211 pc_name=PC45
 
 [fpb_1_fila0]
 pc01_fpb_1 ansible_host=172.30.200.253 pc_name=PC01
@@ -462,10 +462,10 @@ pc45_dam_1 ansible_host=10.116.0.176 pc_name=PC45
 pc46_dam_1 ansible_host=10.116.0.177 pc_name=PC46
 pc51_dam_1 ansible_host=10.116.0.178 pc_name=PC51
 pc52_dam_1 ansible_host=10.116.0.179 pc_name=PC52
-#pc53_dam_1 ansible_host=10.116.0.180 pc_name=PC53
+pc53_dam_1 ansible_host=10.116.0.180 pc_name=PC53
 pc54_dam_1 ansible_host=10.116.0.181 pc_name=PC54
 pc55_dam_1 ansible_host=10.116.0.182 pc_name=PC55
-#pc56_dam_1 ansible_host=10.116.0.183 pc_name=PC56
+pc56_dam_1 ansible_host=10.116.0.183 pc_name=PC56
 
 [dam_1_fila0]
 pc01_dam_1 ansible_host=10.116.0.190 pc_name=PC01
@@ -505,10 +505,10 @@ pc46_dam_1 ansible_host=10.116.0.177 pc_name=PC46
 [dam_1_fila5]
 pc51_dam_1 ansible_host=10.116.0.178 pc_name=PC51
 pc52_dam_1 ansible_host=10.116.0.179 pc_name=PC52
-#pc53_dam_1 ansible_host=10.116.0.180 pc_name=PC53
+pc53_dam_1 ansible_host=10.116.0.180 pc_name=PC53
 pc54_dam_1 ansible_host=10.116.0.181 pc_name=PC54
 pc55_dam_1 ansible_host=10.116.0.182 pc_name=PC55
-#pc56_dam_1 ansible_host=10.116.0.183 pc_name=PC56
+pc56_dam_1 ansible_host=10.116.0.183 pc_name=PC56
 
 [dam_1:children]
 dam_1_fila0
