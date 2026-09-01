@@ -8,8 +8,17 @@
 #     consola de GRUB (tecla 'c') y entrar en modo rescate/recovery.
 #
 # Idempotente: se puede volver a ejecutar tras cada 'apt upgrade' de
-# grub-common (que puede resetear /etc/grub.d/10_linux) y solo tocará lo
-# que haga falta.
+# grub-common (que puede resetear /etc/grub.d/10_linux y /etc/grub.d/30_os-prober)
+# y solo tocará lo que haga falta.
+#
+# Arranque dual (Windows):
+#   Además de 10_linux, se parchea /etc/grub.d/30_os-prober (si existe) para
+#   que las entradas de Windows detectadas por os-prober (--class windows
+#   --class os) también lleven --unrestricted. En los equipos sin arranque
+#   dual ese fichero puede no tener entradas de Windows o incluso no
+#   existir; las tareas correspondientes se saltan sin fallar (when).
+#   Requiere que os-prober esté instalado y que GRUB_DISABLE_OS_PROBER no
+#   esté a "true" en /etc/default/grub, o Windows no aparecerá en el menú.
 #
 # NOTA: el contenido de /etc/grub.d/01_password se genera embebido en este
 # mismo playbook (módulo 'copy' con 'content'), por lo que ya NO depende de
@@ -87,6 +96,40 @@
         backup: true
       notify: Regenerar grub.cfg
 
+    - name: Comprobar si existe /etc/grub.d/30_os-prober (equipos con arranque dual)
+      ansible.builtin.stat:
+        path: /etc/grub.d/30_os-prober
+      register: os_prober_script
+
+    - name: Permitir que las entradas de Windows detectadas por os-prober arranquen sin contraseña
+      ansible.builtin.replace:
+        path: /etc/grub.d/30_os-prober
+        regexp: '(--class windows --class os)(?!.* --unrestricted)( \$menuentry_id_option)'
+        replace: '\1 --unrestricted\2'
+        backup: true
+      when: os_prober_script.stat.exists
+      notify: Regenerar grub.cfg
+
+    - name: Comprobar que GRUB_DISABLE_OS_PROBER no está en "true" en /etc/default/grub
+      ansible.builtin.command:
+        cmd: grep -Eqx 'GRUB_DISABLE_OS_PROBER=true' /etc/default/grub
+      register: os_prober_disabled
+      changed_when: false
+      failed_when: false
+      when: os_prober_script.stat.exists
+
+    - name: Avisar si os-prober está deshabilitado (Windows no aparecerá en el menú)
+      ansible.builtin.debug:
+        msg: >-
+          AVISO: /etc/default/grub tiene GRUB_DISABLE_OS_PROBER=true, por lo
+          que aunque esta entrada quede sin restricción, Windows no se
+          detectará ni aparecerá en el menú de GRUB. Cambia esa línea a
+          GRUB_DISABLE_OS_PROBER=false (o elimínala) y vuelve a lanzar
+          update-grub.
+      when:
+        - os_prober_script.stat.exists
+        - os_prober_disabled.rc == 0
+
   handlers:
     - name: Regenerar grub.cfg
       ansible.builtin.command: update-grub
@@ -111,3 +154,22 @@
       register: unrestricted_in_cfg
       changed_when: false
       failed_when: unrestricted_in_cfg.stdout | int == 0
+
+    - name: Verificar que las entradas de Windows (si existen) quedan sin restricción
+      ansible.builtin.command:
+        cmd: grep -c -- '--class windows --class os --unrestricted' /boot/grub/grub.cfg
+      register: windows_unrestricted_in_cfg
+      changed_when: false
+      failed_when: false
+      when: os_prober_script.stat.exists
+
+    - name: Avisar si no se ha detectado ninguna entrada de Windows sin restricción
+      ansible.builtin.debug:
+        msg: >-
+          AVISO: se esperaba encontrar entradas de Windows con --unrestricted
+          en grub.cfg y no se ha encontrado ninguna. Comprueba que os-prober
+          detecta Windows correctamente (¿está GRUB_DISABLE_OS_PROBER=true?
+          ¿está el disco/partición de Windows accesible?).
+      when:
+        - os_prober_script.stat.exists
+        - windows_unrestricted_in_cfg.stdout | default('0') | int == 0
