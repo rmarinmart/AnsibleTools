@@ -101,10 +101,16 @@
         path: /etc/grub.d/30_os-prober
       register: os_prober_script
 
-    - name: Permitir que las entradas de Windows detectadas por os-prober arranquen sin contraseña
+    - name: Permitir que las entradas detectadas por os-prober (Windows, chainload, EFI) arranquen sin contraseña
+      # NOTA: en /etc/grub.d/30_os-prober la clase NO se escribe como texto fijo
+      # "--class windows --class os"; se calcula en runtime en la variable
+      # $CLASS a partir del LABEL que devuelve os-prober (p.ej. LABEL="Windows"
+      # -> CLASS="--class windows"). Los menuentry reales usan
+      # "$CLASS --class os \$menuentry_id_option", así que hay que parchear
+      # ese patrón (cubre tanto la entrada EFI como la de chainload/BIOS).
       ansible.builtin.replace:
         path: /etc/grub.d/30_os-prober
-        regexp: '(--class windows --class os)(?!.* --unrestricted)( \$menuentry_id_option)'
+        regexp: '(\$CLASS --class os)(?!.* --unrestricted)( \\\$menuentry_id_option)'
         replace: '\1 --unrestricted\2'
         backup: true
       when: os_prober_script.stat.exists
