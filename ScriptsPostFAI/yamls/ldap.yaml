@@ -1,0 +1,189 @@
+---
+- name: Configurar autenticación LDAP (solo equipos de docentes)
+  hosts: all:!localhost
+  become: yes
+  gather_facts: yes   # Necesario para disponer de ansible_hostname
+
+  vars:
+    # Mismo criterio que en epoptes.yaml: el "equipo de docente" se
+    # identifica por su hostname real. De momento coincide con el equipo
+    # que también actúa como servidor epoptes (PC01), pero se deja como
+    # variable independiente por si en el futuro hay varios docentes.
+    ldap_admin_hostnames:
+      - PC01
+
+    ldap_server_fqdn: LDAP-SERVER.pacomolla.local
+    ldap_server_ip: 172.30.12.181
+    ldap_server_uri: "ldaps://{{ ldap_server_fqdn }}:636"
+    ldap_base_dn: dc=pacomolla,dc=local
+    ldap_root_bind_dn: "cn=admin,{{ ldap_base_dn }}"
+    ldap_bind_dn: "cn=proxyuser,dc=example,dc=net"
+
+    # Contraseña real que se escribe en /etc/ldap.secret (la usan
+    # libnss-ldap/libpam-ldap para operaciones como root sobre el
+    # directorio). En texto plano, igual que en cambiar_pass.yaml: no hay
+    # vault ni prompt al lanzar el playbook. Se asume que el control node
+    # de Ansible y este repositorio están razonablemente protegidos.
+    ldap_secret_password: "pmollax@67"
+
+  tasks:
+    - name: Determinar si este equipo es un equipo de docente (por hostname real)
+      ansible.builtin.set_fact:
+        es_equipo_docente: "{{ ansible_hostname | lower in ldap_admin_hostnames | map('lower') | list }}"
+
+    - name: Añadir/actualizar LDAP-SERVER en /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '\sLDAP-SERVER(\s|$)'
+        line: "{{ ldap_server_ip }}\t{{ ldap_server_fqdn }} LDAP-SERVER"
+        state: present
+      when: es_equipo_docente
+
+    - name: Comprobar conectividad con LDAP-SERVER
+      ansible.builtin.command: ping -c 2 LDAP-SERVER
+      register: ldap_ping
+      changed_when: false
+      failed_when: ldap_ping.rc != 0
+      when: es_equipo_docente
+
+    - name: Preconfigurar debconf de ldap-auth-config / libpam-runtime
+      ansible.builtin.debconf:
+        name: "{{ item.name }}"
+        question: "{{ item.question }}"
+        value: "{{ item.value }}"
+        vtype: "{{ item.vtype }}"
+      loop:
+        - { name: ldap-auth-config, question: "ldap-auth-config/bindpw", value: "password", vtype: password }
+        - { name: ldap-auth-config, question: "ldap-auth-config/rootbindpw", value: "password", vtype: password }
+        - { name: ldap-auth-config, question: "ldap-auth-config/move-to-debconf", value: "true", vtype: boolean }
+        - { name: ldap-auth-config, question: "ldap-auth-config/dblogin", value: "false", vtype: boolean }
+        - { name: ldap-auth-config, question: "ldap-auth-config/binddn", value: "{{ ldap_bind_dn }}", vtype: string }
+        - { name: ldap-auth-config, question: "ldap-auth-config/ldapns/ldap_version", value: "3", vtype: select }
+        - { name: ldap-auth-config, question: "ldap-auth-config/override", value: "true", vtype: boolean }
+        - { name: ldap-auth-config, question: "ldap-auth-config/ldapns/ldap-server", value: "{{ ldap_server_uri }}", vtype: string }
+        - { name: ldap-auth-config, question: "ldap-auth-config/pam_password", value: "md5", vtype: select }
+        - { name: libpam-runtime, question: "libpam-runtime/profiles", value: "unix, ldap, systemd, gnome-keyring, ecryptfs-utils, capability", vtype: multiselect }
+        - { name: ldap-auth-config, question: "ldap-auth-config/rootbinddn", value: "{{ ldap_root_bind_dn }}", vtype: string }
+        - { name: ldap-auth-config, question: "ldap-auth-config/ldapns/base-dn", value: "{{ ldap_base_dn }}", vtype: string }
+        - { name: ldap-auth-config, question: "ldap-auth-config/dbrootlogin", value: "true", vtype: boolean }
+      when: es_equipo_docente
+
+    - name: Instalar paquetes LDAP (libnss-ldap, libpam-ldap, nscd)
+      ansible.builtin.apt:
+        name:
+          - libnss-ldap
+          - libpam-ldap
+          - nscd
+        state: present
+        update_cache: yes
+      when: es_equipo_docente
+
+    - name: Desplegar /etc/ldap.secret con la contraseña de administración LDAP
+      ansible.builtin.copy:
+        content: "{{ ldap_secret_password }}\n"
+        dest: /etc/ldap.secret
+        owner: root
+        group: root
+        mode: '0600'
+      when: es_equipo_docente
+
+    - name: Usar "compat ldap" en lugar de "files systemd" en nsswitch.conf
+      ansible.builtin.replace:
+        path: /etc/nsswitch.conf
+        regexp: 'files systemd'
+        replace: 'compat ldap'
+      when: es_equipo_docente
+
+    - name: Quitar "use_authtok" de /usr/share/pam-configs/ldap
+      ansible.builtin.replace:
+        path: /usr/share/pam-configs/ldap
+        regexp: 'use_authtok'
+        replace: ''
+      when: es_equipo_docente
+
+    - name: Quitar "use_authtok" de /etc/pam.d/common-password
+      ansible.builtin.replace:
+        path: /etc/pam.d/common-password
+        regexp: 'use_authtok'
+        replace: ''
+      when: es_equipo_docente
+
+    - name: Comprobar si el perfil PAM mkhomedir ya está activo
+      ansible.builtin.command: grep -q 'pam_mkhomedir.so' /etc/pam.d/common-session
+      register: mkhomedir_activo
+      changed_when: false
+      failed_when: false
+      when: es_equipo_docente
+
+    - name: Habilitar perfil PAM "Create home directory on login" (mkhomedir)
+      ansible.builtin.command: pam-auth-update --package --enable mkhomedir
+      when:
+        - es_equipo_docente
+        - mkhomedir_activo.rc != 0
+
+    - name: Comprobar si el perfil PAM eCryptfs sigue activo
+      ansible.builtin.command: grep -q 'pam_ecryptfs.so' /etc/pam.d/common-auth
+      register: ecryptfs_activo
+      changed_when: false
+      failed_when: false
+      when: es_equipo_docente
+
+    - name: Eliminar perfil PAM "eCryptfs Key/Mount Management"
+      ansible.builtin.command: pam-auth-update --package --remove ecryptfs-utils
+      when:
+        - es_equipo_docente
+        - ecryptfs_activo.rc == 0
+
+    - name: Añadir opciones skel/umask a pam_mkhomedir.so en common-session
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/common-session
+        regexp: '^session\s+optional\s+pam_mkhomedir\.so.*$'
+        line: "session\toptional\t\t\tpam_mkhomedir.so skel=/etc/skel umask=077"
+      when: es_equipo_docente
+
+    - name: Copiar certificado CA de LDAP a /etc/ssl/certs
+      ansible.builtin.copy:
+        src: files/cacert.pem
+        dest: /etc/ssl/certs/cacert.pem
+        owner: root
+        group: root
+        mode: '0644'
+      when: es_equipo_docente
+
+    - name: Activar SSL en /etc/ldap.conf
+      ansible.builtin.lineinfile:
+        path: /etc/ldap.conf
+        regexp: '^ssl\s'
+        line: "ssl on"
+        state: present
+      when: es_equipo_docente
+
+    - name: Configurar ruta del certificado CA en /etc/ldap.conf
+      ansible.builtin.lineinfile:
+        path: /etc/ldap.conf
+        regexp: '^tls_cacertfile\s'
+        line: "tls_cacertfile /etc/ssl/certs/cacert.pem"
+        state: present
+      when: es_equipo_docente
+
+    - name: Dar permisos sudo al grupo grp_profesores
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        regexp: '^%grp_profesores\s'
+        line: '%grp_profesores ALL=(ALL) ALL'
+        state: present
+        validate: 'visudo -cf %s'
+      when: es_equipo_docente
+
+    # Requiere la colección "community.general" (suele venir ya instalada
+    # junto con el paquete "ansible"; si solo tienes ansible-core, instálala
+    # con: ansible-galaxy collection install community.general)
+    - name: Activar inicio de sesión manual en lightdm ([Seat:*] greeter-show-manual-login)
+      community.general.ini_file:
+        path: /etc/lightdm/lightdm.conf
+        section: 'Seat:*'
+        option: greeter-show-manual-login
+        value: "true"
+        mode: '0644'
+        create: yes
+      when: es_equipo_docente
