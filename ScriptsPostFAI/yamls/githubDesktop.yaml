@@ -1,14 +1,11 @@
 ---
-- name: Instalar GitHub Desktop 
-  hosts: all:!localhost
-  become: yes
-
----
 # Playbook: Instalación idempotente de GitHub Desktop en Linux Mint
+# Uso: ansible-playbook install_github_desktop.yml --ask-become-pass
+#      (o con -K si tu usuario usa sudo con contraseña)
 
 - name: Instalar GitHub Desktop (repositorio shiftkey) en Linux Mint
-  hosts: all
-  become: true
+  hosts: all:!localhost
+  become: yes
 
   vars:
     shiftkey_keyring_path: /usr/share/keyrings/shiftkey-packages.gpg
@@ -17,9 +14,15 @@
       deb [arch=amd64 signed-by={{ shiftkey_keyring_path }}]
       https://apt.packages.shiftkey.dev/ubuntu/ any main
     shiftkey_repo_file: /etc/apt/sources.list.d/shiftkey-packages.list
-    tmp_key_path: /tmp/shiftkey-gpg.key
 
   tasks:
+
+    - name: Comprobar que wget y gnupg están instalados
+      ansible.builtin.apt:
+        name:
+          - wget
+          - gnupg
+        state: present
 
     - name: Asegurar que el directorio /usr/share/keyrings existe
       ansible.builtin.file:
@@ -27,40 +30,19 @@
         state: directory
         mode: "0755"
 
-    - name: Comprobar si la clave GPG ya está instalada
-      ansible.builtin.stat:
-        path: "{{ shiftkey_keyring_path }}"
-      register: shiftkey_key_stat
-
-    - name: Descargar la clave GPG del repositorio (formato ASCII armored)
-      ansible.builtin.get_url:
-        url: "{{ shiftkey_gpg_key_url }}"
-        dest: "{{ tmp_key_path }}"
-        mode: "0644"
-        force: true
-      when: not shiftkey_key_stat.stat.exists
-
-    - name: Convertir la clave GPG a formato binario (dearmor) e instalarla
+    - name: Descargar la clave GPG y convertirla a formato binario (dearmor)
       ansible.builtin.shell: |
         set -o pipefail
-        gpg --dearmor < {{ tmp_key_path }} > {{ shiftkey_keyring_path }}
+        wget -qO - {{ shiftkey_gpg_key_url }} | gpg --dearmor > {{ shiftkey_keyring_path }}
       args:
         executable: /bin/bash
         creates: "{{ shiftkey_keyring_path }}"
-      when: not shiftkey_key_stat.stat.exists
 
     - name: Ajustar permisos del keyring
       ansible.builtin.file:
         path: "{{ shiftkey_keyring_path }}"
         mode: "0644"
         state: file
-      when: not shiftkey_key_stat.stat.exists
-
-    - name: Eliminar el archivo temporal de la clave GPG
-      ansible.builtin.file:
-        path: "{{ tmp_key_path }}"
-        state: absent
-      when: not shiftkey_key_stat.stat.exists
 
     - name: Añadir el repositorio APT de shiftkey-packages
       ansible.builtin.copy:
@@ -82,4 +64,3 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
-
