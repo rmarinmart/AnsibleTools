@@ -8,12 +8,12 @@
   become: yes
 
   vars:
-    shiftkey_keyring_path: /usr/share/keyrings/shiftkey-packages.gpg
+    shiftkey_keyring_path: /usr/share/keyrings/mwt-desktop.gpg
     shiftkey_gpg_key_url: "https://mirror.mwt.me/shiftkey-desktop/gpgkey"
     shiftkey_repo_line: >-
       deb [arch=amd64 signed-by={{ shiftkey_keyring_path }}]
       https://mirror.mwt.me/shiftkey-desktop/deb/ any main
-    shiftkey_repo_file: /etc/apt/sources.list.d/shiftkey-packages.list
+    shiftkey_repo_file: /etc/apt/sources.list.d/mwt-desktop.list
 
   tasks:
 
