@@ -8,6 +8,13 @@
 #              para los usuarios existentes como en /etc/skel) y refrescando
 #              la caché del menú con update-desktop-database.
 #
+#              El grupo principal de cada usuario se obtiene consultando
+#              /etc/passwd (vía NSS con el módulo getent, por lo que también
+#              funciona con usuarios LDAP/sssd) para leer su GID, y luego
+#              /etc/group para resolver el nombre real de ese grupo. Esto
+#              cubre casos como usuarios LDAP cuyo grupo principal no se
+#              llama igual que el usuario (p. ej. grupo "profesores").
+#
 # Uso:
 #   ansible-playbook -i inventario instalar_blender.yml
 #
@@ -168,42 +175,95 @@
           StartupNotify=true
 
     # -----------------------------------------------------------------
-    # 9. Localizar los usuarios que tienen carpeta home en el sistema
+    # 9. Obtener las bases de datos passwd y group vía NSS (getent).
+    #    Esto funciona igual para cuentas locales que para cuentas LDAP,
+    #    siempre que el equipo tenga NSS/sssd configurado correctamente.
     # -----------------------------------------------------------------
-    - name: Buscar los directorios home existentes en /home
+    - name: Obtener la base de datos de usuarios (passwd) vía NSS
+      ansible.builtin.getent:
+        database: passwd
+        split: ":"
+
+    - name: Obtener la base de datos de grupos (group) vía NSS
+      ansible.builtin.getent:
+        database: group
+        split: ":"
+
+    # -----------------------------------------------------------------
+    # 10. Localizar los directorios home existentes en /home,
+    #     ignorando "lost+found"
+    # -----------------------------------------------------------------
+    - name: Buscar los directorios home existentes en /home (excluyendo lost+found)
       ansible.builtin.find:
         paths: /home
         file_type: directory
         recurse: false
+        excludes: "lost+found"
       register: home_dirs_found
 
     # -----------------------------------------------------------------
-    # 10. Crear la entrada de menú para cada usuario existente
+    # 11. Para cada directorio home, resolver usuario y su grupo
+    #     principal real: GID desde passwd -> nombre desde group.
+    # -----------------------------------------------------------------
+    - name: Construir la lista de usuarios con su directorio home y grupo principal
+      ansible.builtin.set_fact:
+        home_users: "{{ (home_users | default([])) + [ {
+            'username': home_username,
+            'home': item.path,
+            'group': home_group_name
+          } ] }}"
+      vars:
+        home_username: "{{ item.path | basename }}"
+        home_passwd_entry: "{{ ansible_facts.getent_passwd[home_username] | default([]) }}"
+        home_gid: "{{ home_passwd_entry[2] | default('') }}"
+        home_group_name: >-
+          {{
+            (ansible_facts.getent_group
+              | dict2items
+              | selectattr('value.1', 'equalto', home_gid)
+              | map(attribute='key')
+              | list
+              | first)
+            | default(home_username, true)
+          }}
+      loop: "{{ home_dirs_found.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Mostrar el usuario y grupo principal resuelto para cada home
+      ansible.builtin.debug:
+        msg: "Usuario: {{ item.username }} -> home: {{ item.home }} -> grupo principal: {{ item.group }}"
+      loop: "{{ home_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+
+    # -----------------------------------------------------------------
+    # 12. Crear la entrada de menú para cada usuario existente
     # -----------------------------------------------------------------
     - name: Crear el directorio ~/.local/share/applications de cada usuario
       ansible.builtin.file:
-        path: "{{ item.path }}/.local/share/applications"
+        path: "{{ item.home }}/.local/share/applications"
         state: directory
-        owner: "{{ item.path | basename }}"
-        group: "{{ item.path | basename }}"
+        owner: "{{ item.username }}"
+        group: "{{ item.group }}"
         mode: "0755"
-      loop: "{{ home_dirs_found.files }}"
+      loop: "{{ home_users }}"
       loop_control:
-        label: "{{ item.path }}"
+        label: "{{ item.username }}"
 
     - name: Crear/actualizar el lanzador de Blender para cada usuario existente
       ansible.builtin.copy:
-        dest: "{{ item.path }}/.local/share/applications/{{ blender_desktop_filename }}"
+        dest: "{{ item.home }}/.local/share/applications/{{ blender_desktop_filename }}"
         content: "{{ blender_desktop_content }}"
-        owner: "{{ item.path | basename }}"
-        group: "{{ item.path | basename }}"
+        owner: "{{ item.username }}"
+        group: "{{ item.group }}"
         mode: "0644"
-      loop: "{{ home_dirs_found.files }}"
+      loop: "{{ home_users }}"
       loop_control:
-        label: "{{ item.path }}"
+        label: "{{ item.username }}"
 
     # -----------------------------------------------------------------
-    # 11. Añadir la misma entrada en /etc/skel para futuros usuarios
+    # 13. Añadir la misma entrada en /etc/skel para futuros usuarios
     # -----------------------------------------------------------------
     - name: Crear el directorio de aplicaciones en /etc/skel
       ansible.builtin.file:
@@ -218,7 +278,7 @@
         mode: "0644"
 
     # -----------------------------------------------------------------
-    # 12. Refrescar la caché del menú de aplicaciones
+    # 14. Refrescar la caché del menú de aplicaciones
     # -----------------------------------------------------------------
     - name: Comprobar si la herramienta update-desktop-database está disponible
       ansible.builtin.command: which update-desktop-database
@@ -235,10 +295,10 @@
       when: update_desktop_database_bin.rc != 0
 
     - name: Actualizar la caché del menú de aplicaciones para cada usuario
-      ansible.builtin.command: "update-desktop-database {{ item.path }}/.local/share/applications"
-      loop: "{{ home_dirs_found.files }}"
+      ansible.builtin.command: "update-desktop-database {{ item.home }}/.local/share/applications"
+      loop: "{{ home_users }}"
       loop_control:
-        label: "{{ item.path }}"
+        label: "{{ item.username }}"
       changed_when: false
       when: update_desktop_database_bin.rc == 0
 
