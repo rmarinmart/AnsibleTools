@@ -5,7 +5,6 @@
 - import_playbook: ../yamls/libreoffice.yaml
 - import_playbook: ../yamls/epoptes.yaml
 - import_playbook: ../yamls/ldap.yaml
-- import_playbook: ../yamls/nvidia-driver.yaml
 - import_playbook: ../yamls/inkscape.yaml
 - import_playbook: ../yamls/gimp.yaml
 - import_playbook: ../yamls/audacity.yaml
