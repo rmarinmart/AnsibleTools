@@ -1,0 +1,9 @@
+---
+- name: Instalar Drivers XPPen
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Drivers XPPen
+      ansible.builtin.apt:
+        deb: "http://172.30.12.180/Ansible/XPPenLinux4.0.15-260422.deb"

@@ -6,3 +6,4 @@
 - import_playbook: ../yamls/gh.yaml
 - import_playbook: ../yamls/githubDesktop.yaml
 - import_playbook: ../yamls/aseprite.yaml
+- import_playbook: ../yamls/XPPenDrivers.yaml
