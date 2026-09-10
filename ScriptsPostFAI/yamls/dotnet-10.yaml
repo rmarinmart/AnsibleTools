@@ -1,0 +1,10 @@
+---
+- name: Instalar Dotnet SDK 10 
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar Donet SDK 10 
+      ansible.builtin.apt:
+        name: 
+           - dotnet-sdk-10.0

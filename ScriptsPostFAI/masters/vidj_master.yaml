@@ -8,3 +8,4 @@
 - import_playbook: ../yamls/aseprite.yaml
 - import_playbook: ../yamls/XPPenDrivers.yaml
 - import_playbook: ../yamls/blender.yaml
+- import_playbook: ../yamls/dotnet-10.yaml
