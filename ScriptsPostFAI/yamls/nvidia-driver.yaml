@@ -10,10 +10,6 @@
 #   Si la máquina no tiene una GPU NVIDIA, el playbook finaliza sin hacer
 #   ningún cambio en ese host.
 #
-# Uso:
-#   ansible-playbook -i "localhost," -c local nvidia-drivers-playbook.yml --ask-become-pass
-#   (o usando un inventario normal contra máquinas remotas con Mint 22.3)
-#
 # Variables opcionales (override con -e):
 #   nvidia_allow_reboot: false   -> si se pone a true, reinicia automáticamente
 #                                    cuando el driver se acaba de instalar/cambiar

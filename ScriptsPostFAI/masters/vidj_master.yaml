@@ -4,3 +4,4 @@
 - import_playbook: ../yamls/visualstudiocode.yaml
 - import_playbook: ../yamls/git.yaml
 - import_playbook: ../yamls/gh.yaml
+- import_playbook: ../yamls/aseprite.yaml
