@@ -10,3 +10,4 @@
 - import_playbook: ../yamls/blender.yaml
 - import_playbook: ../yamls/dotnet-10.yaml
 - import_playbook: ../yamls/unityhub.yaml
+- import_playbook: ../yamls/krita.yaml
