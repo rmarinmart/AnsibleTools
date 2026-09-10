@@ -335,28 +335,28 @@ pc44_ce ansible_host=172.30.200.228 pc_name=PC44
 pc01_ce ansible_host=172.30.200.254 pc_name=PC01
 
 [ce_fila1]
-pc11_ce ansible_host=172.30.200.211 pc_name=PC11
-pc12_ce ansible_host=172.30.200.212 pc_name=PC12
-pc13_ce ansible_host=172.30.200.213 pc_name=PC13
-pc14_ce ansible_host=172.30.200.214 pc_name=PC14
+pc11_ce ansible_host=172.30.200.213 pc_name=PC11
+pc12_ce ansible_host=172.30.200.214 pc_name=PC12
+pc13_ce ansible_host=172.30.200.215 pc_name=PC13
+pc14_ce ansible_host=172.30.200.216 pc_name=PC14
 
 [ce_fila2]
-pc21_ce ansible_host=172.30.200.215 pc_name=PC21
-pc22_ce ansible_host=172.30.200.216 pc_name=PC22
-pc23_ce ansible_host=172.30.200.217 pc_name=PC23
-pc24_ce ansible_host=172.30.200.218 pc_name=PC24
+pc21_ce ansible_host=172.30.200.217 pc_name=PC21
+pc22_ce ansible_host=172.30.200.218 pc_name=PC22
+pc23_ce ansible_host=172.30.200.219 pc_name=PC23
+pc24_ce ansible_host=172.30.200.220 pc_name=PC24
 
 [ce_fila3]
-pc31_ce ansible_host=172.30.200.219 pc_name=PC31
-pc32_ce ansible_host=172.30.200.220 pc_name=PC32
-pc33_ce ansible_host=172.30.200.221 pc_name=PC33
-pc34_ce ansible_host=172.30.200.222 pc_name=PC34
+pc31_ce ansible_host=172.30.200.221 pc_name=PC31
+pc32_ce ansible_host=172.30.200.222 pc_name=PC32
+pc33_ce ansible_host=172.30.200.223 pc_name=PC33
+pc34_ce ansible_host=172.30.200.224 pc_name=PC34
 
 [ce_fila4]
-pc41_ce ansible_host=172.30.200.223 pc_name=PC41
-pc42_ce ansible_host=172.30.200.224 pc_name=PC42
-pc43_ce ansible_host=172.30.200.225 pc_name=PC43
-pc44_ce ansible_host=172.30.200.226 pc_name=PC44
+pc41_ce ansible_host=172.30.200.225 pc_name=PC41
+pc42_ce ansible_host=172.30.200.226 pc_name=PC42
+pc43_ce ansible_host=172.30.200.227 pc_name=PC43
+pc44_ce ansible_host=172.30.200.228 pc_name=PC44
 
 [ce:children]
 ce_fila0
