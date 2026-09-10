@@ -6,7 +6,7 @@
   become: yes
 
   vars:
-    unity_keyring_path: /usr/share/keyrings/unityhub.gpg
+    unity_keyring_path: /usr/share/keyrings/Unity_Technologies_ApS.gpg
     unity_gpg_key_url: "https://hub.unity3d.com/linux/keys/public"
     unity_repo_line: >-
       deb [arch=amd64 signed-by={{ unity_keyring_path }}]
