@@ -1,0 +1,167 @@
+---
+# ==============================================================================
+# Playbook: nvidia-drivers-playbook.yml
+#
+# Objetivo:
+#   Instalar, de forma idempotente, el driver privativo de NVIDIA marcado
+#   como "recommended" por el sistema de detección de hardware que usa el
+#   Gestor de Controladores de Linux Mint (backend: ubuntu-drivers-common).
+#
+#   Si la máquina no tiene una GPU NVIDIA, el playbook finaliza sin hacer
+#   ningún cambio en ese host.
+#
+# Uso:
+#   ansible-playbook -i "localhost," -c local nvidia-drivers-playbook.yml --ask-become-pass
+#   (o usando un inventario normal contra máquinas remotas con Mint 22.3)
+#
+# Variables opcionales (override con -e):
+#   nvidia_allow_reboot: false   -> si se pone a true, reinicia automáticamente
+#                                    cuando el driver se acaba de instalar/cambiar
+# ==============================================================================
+
+- name: Instalar el driver NVIDIA recomendado (equivalente al Gestor de Controladores)
+  hosts: all:!localhost
+  become: yes
+
+  vars:
+    nvidia_allow_reboot: false
+
+  tasks:
+
+    - name: Actualizar la caché de apt
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    # --------------------------------------------------------------------
+    # 1. Detectar si hay una GPU NVIDIA en el equipo
+    # --------------------------------------------------------------------
+    - name: Inspeccionar dispositivos PCI
+      ansible.builtin.command: lspci -nnk
+      register: lspci_output
+      changed_when: false
+      check_mode: false
+
+    - name: Determinar si hay una GPU NVIDIA presente
+      ansible.builtin.set_fact:
+        nvidia_gpu_present: "{{
+          (lspci_output.stdout is search('VGA compatible controller.*NVIDIA', ignorecase=True))
+          or (lspci_output.stdout is search('3D controller.*NVIDIA', ignorecase=True))
+        }}"
+
+    - name: Informar de que no hay GPU NVIDIA y detener la ejecución en este host
+      ansible.builtin.debug:
+        msg: "No se ha detectado ninguna GPU NVIDIA en este equipo. No se realizará ninguna acción."
+      when: not nvidia_gpu_present
+
+    - name: Finalizar la ejecución en este host si no hay GPU NVIDIA
+      ansible.builtin.meta: end_host
+      when: not nvidia_gpu_present
+
+    # --------------------------------------------------------------------
+    # 2. Asegurar que la herramienta de detección de drivers está presente
+    #    (es el mismo backend que usa el Gestor de Controladores de Mint)
+    # --------------------------------------------------------------------
+    - name: Instalar ubuntu-drivers-common
+      ansible.builtin.apt:
+        name: ubuntu-drivers-common
+        state: present
+
+    # --------------------------------------------------------------------
+    # 3. Preguntar a ubuntu-drivers qué paquete recomienda para esta GPU
+    # --------------------------------------------------------------------
+    - name: Consultar los drivers detectados para el hardware
+      ansible.builtin.command: ubuntu-drivers devices
+      register: ubuntu_drivers_output
+      changed_when: false
+
+    - name: Extraer el paquete marcado como "recommended"
+      ansible.builtin.set_fact:
+        nvidia_recommended_package: "{{
+          ubuntu_drivers_output.stdout_lines
+          | select('search', 'recommended')
+          | map('regex_search', 'nvidia-driver-[0-9]+(-open|-server)?')
+          | select('string')
+          | list
+          | first
+          | default('')
+        }}"
+
+    - name: Fallar si no se ha podido determinar un driver recomendado
+      ansible.builtin.fail:
+        msg: >-
+          No se ha encontrado ningún paquete NVIDIA marcado como "recommended"
+          por ubuntu-drivers en este equipo. Revisa manualmente la salida de
+          'ubuntu-drivers devices'.
+      when: nvidia_recommended_package == ''
+
+    - name: Mostrar el driver que se va a instalar
+      ansible.builtin.debug:
+        msg: "Driver NVIDIA recomendado detectado: {{ nvidia_recommended_package }}"
+
+    # --------------------------------------------------------------------
+    # 4. (Recomendado) Asegurar las cabeceras del kernel en uso, necesarias
+    #    para que DKMS compile el módulo del driver
+    # --------------------------------------------------------------------
+    - name: Instalar cabeceras del kernel en ejecución
+      ansible.builtin.apt:
+        name: "linux-headers-{{ ansible_kernel }}"
+        state: present
+      register: kernel_headers_result
+      failed_when: false  # en algunos kernels "genéricos" el nombre exacto puede no existir; no bloquear por esto
+
+    - name: Aviso si no se han podido instalar las cabeceras específicas del kernel
+      ansible.builtin.debug:
+        msg: >-
+          No se ha podido instalar 'linux-headers-{{ ansible_kernel }}' automáticamente.
+          Asegúrate de tener instaladas las cabeceras del kernel en uso (linux-headers-generic)
+          para que DKMS pueda compilar el módulo NVIDIA.
+      when: kernel_headers_result.failed | default(false)
+
+    # --------------------------------------------------------------------
+    # 5. Comprobar el estado de Secure Boot (aviso informativo, no bloqueante)
+    # --------------------------------------------------------------------
+    - name: Comprobar estado de Secure Boot
+      ansible.builtin.command: mokutil --sb-state
+      register: sb_state
+      changed_when: false
+      failed_when: false
+
+    - name: Avisar si Secure Boot está activo
+      ansible.builtin.debug:
+        msg: >-
+          Secure Boot está activo en este equipo. La instalación de un módulo DKMS
+          (como el driver NVIDIA) puede requerir inscribir una clave MOK y confirmarla
+          manualmente en el arranque siguiente (pantalla azul de MOK Manager). Este
+          paso no se puede automatizar completamente vía Ansible sin acceso a la
+          consola física/KVM del equipo.
+      when: "'SecureBoot enabled' in sb_state.stdout"
+
+    # --------------------------------------------------------------------
+    # 6. Instalar el driver (esto es lo que hace "Aplicar cambios" en el
+    #    Gestor de Controladores). Es idempotente: si ya está instalado,
+    #    apt no hace nada.
+    # --------------------------------------------------------------------
+    - name: Instalar el driver NVIDIA recomendado
+      ansible.builtin.apt:
+        name: "{{ nvidia_recommended_package }}"
+        state: present
+      register: nvidia_install_result
+
+    - name: Resultado de la instalación
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Se ha instalado/actualizado ' + nvidia_recommended_package + '. Es necesario reiniciar para cargar el driver.'
+             if nvidia_install_result.changed
+             else nvidia_recommended_package + ' ya estaba instalado. No se han realizado cambios.' }}
+
+    # --------------------------------------------------------------------
+    # 7. Reinicio opcional (desactivado por defecto)
+    # --------------------------------------------------------------------
+    - name: Reiniciar el equipo si el driver se acaba de instalar y está permitido
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+        msg: "Reiniciando para cargar el nuevo driver NVIDIA"
+      when:
+        - nvidia_install_result.changed
+        - nvidia_allow_reboot | bool
