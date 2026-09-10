@@ -1,0 +1,64 @@
+---
+# Playbook: Instalación idempotente de UnityHub en Linux Mint
+
+- name: Instalar Unity HUB
+  hosts: all:!localhost
+  become: yes
+
+  vars:
+    unity_keyring_path: /usr/share/keyrings/unityhub.gpg
+    unity_gpg_key_url: "https://hub.unity3d.com/linux/keys/public"
+    unity_repo_line: >-
+      deb [arch=amd64 signed-by={{ unity_keyring_path }}]
+      https://hub.unity3d.com/linux/repos/deb stable main
+    unity_repo_file: /etc/apt/sources.list.d/unityhub.list
+
+  tasks:
+
+    - name: Comprobar que wget y gnupg están instalados
+      ansible.builtin.apt:
+        name:
+          - wget
+          - gnupg
+        state: present
+
+    - name: Asegurar que el directorio /usr/share/keyrings existe
+      ansible.builtin.file:
+        path: /usr/share/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Descargar la clave GPG y convertirla a formato binario (dearmor)
+      ansible.builtin.shell: |
+        set -o pipefail
+        wget -qO - {{ unity_gpg_key_url }} | gpg --dearmor > {{ unity_keyring_path }}
+      args:
+        executable: /bin/bash
+        creates: "{{ unity_keyring_path }}"
+
+    - name: Ajustar permisos del keyring
+      ansible.builtin.file:
+        path: "{{ unity_keyring_path }}"
+        mode: "0644"
+        state: file
+
+    - name: Añadir el repositorio APT de unityhub
+      ansible.builtin.copy:
+        dest: "{{ unity_repo_file }}"
+        content: "{{ unity_repo_line }}\n"
+        mode: "0644"
+        owner: root
+        group: root
+      register: unity_repo_file_result
+
+    - name: Actualizar la caché de APT si el repositorio cambió
+      ansible.builtin.apt:
+        update_cache: true
+      when: unity_repo_file_result.changed
+
+    - name: Instalar Unity Hub
+      ansible.builtin.apt:
+        name: unityhub
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
