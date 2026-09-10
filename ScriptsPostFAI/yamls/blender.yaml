@@ -1,0 +1,248 @@
+---
+# ---------------------------------------------------------------------------
+# Playbook: instalar_blender.yml
+# Descripción: Instala/actualiza Blender de forma idempotente en equipos con
+#              Linux Mint, descargándolo desde un servidor local, detectando
+#              y sustituyendo versiones anteriores, creando el enlace
+#              simbólico en /usr/bin, añadiendo la entrada de menú (tanto
+#              para los usuarios existentes como en /etc/skel) y refrescando
+#              la caché del menú con update-desktop-database.
+#
+# Uso:
+#   ansible-playbook -i inventario instalar_blender.yml
+#
+# NOTA IMPORTANTE sobre el tar.xz:
+#   Los tarball oficiales de Blender suelen contener una carpeta interna
+#   del tipo "blender-5.2.1-linux-x64/" en lugar de los ficheros sueltos.
+#   Este playbook usa "extra_opts: [--strip-components=1]" para volcar el
+#   contenido directamente en /usr/local/blender-5.2.1. Si tu tar.xz local
+#   ya viene sin esa carpeta interna, elimina esa opción.
+# ---------------------------------------------------------------------------
+
+- name: Instalar/actualizar Blender de forma idempotente en Linux Mint
+  hosts: all:!localhost
+  become: true
+
+  vars:
+    blender_version: "5.2.1"
+    blender_url: "http://172.30.12.180/Ansible/blender-{{ blender_version }}-linux-x64.tar.xz"
+    blender_install_dir: "/usr/local/blender-{{ blender_version }}"
+    blender_tmp_download: "/tmp/blender-{{ blender_version }}-linux-x64.tar.xz"
+    blender_bin: "{{ blender_install_dir }}/blender"
+    blender_desktop_filename: "blender.desktop"
+
+  tasks:
+
+    # -----------------------------------------------------------------
+    # 1. Detectar instalaciones previas de Blender (cualquier versión)
+    # -----------------------------------------------------------------
+    - name: Buscar instalaciones previas de Blender en /usr/local
+      ansible.builtin.find:
+        paths: /usr/local
+        file_type: directory
+        patterns: "blender-*"
+        recurse: false
+      register: blender_existing_dirs
+
+    - name: Determinar directorios de versiones distintas a la deseada
+      ansible.builtin.set_fact:
+        blender_old_dirs: "{{ blender_existing_dirs.files | selectattr('path', 'ne', blender_install_dir) | map(attribute='path') | list }}"
+
+    - name: Avisar de que se ha detectado una versión anterior de Blender
+      ansible.builtin.debug:
+        msg: >-
+          Se han detectado instalaciones de Blender distintas a la versión
+          {{ blender_version }} en: {{ blender_old_dirs }}. Se eliminarán y
+          se instalará la versión {{ blender_version }}.
+      when: blender_old_dirs | length > 0
+
+    - name: Eliminar instalaciones antiguas/distintas de Blender
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ blender_old_dirs }}"
+      loop_control:
+        label: "{{ item }}"
+      when: blender_old_dirs | length > 0
+
+    # -----------------------------------------------------------------
+    # 2. Comprobar si la versión deseada ya está instalada (idempotencia)
+    # -----------------------------------------------------------------
+    - name: Comprobar si el ejecutable de Blender {{ blender_version }} ya existe
+      ansible.builtin.stat:
+        path: "{{ blender_bin }}"
+      register: blender_installed
+
+    # -----------------------------------------------------------------
+    # 3. Descargar el paquete (get_url ya es idempotente por defecto:
+    #    no vuelve a descargar si el fichero de destino ya existe)
+    # -----------------------------------------------------------------
+    - name: Descargar Blender desde el servidor local
+      ansible.builtin.get_url:
+        url: "{{ blender_url }}"
+        dest: "{{ blender_tmp_download }}"
+        mode: "0644"
+        timeout: 60
+      when: not blender_installed.stat.exists
+
+    # -----------------------------------------------------------------
+    # 4. Crear el directorio de instalación
+    # -----------------------------------------------------------------
+    - name: Crear el directorio de instalación de Blender
+      ansible.builtin.file:
+        path: "{{ blender_install_dir }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+      when: not blender_installed.stat.exists
+
+    # -----------------------------------------------------------------
+    # 5. Extraer el tar.xz directamente en el directorio de instalación
+    # -----------------------------------------------------------------
+    - name: Extraer Blender en {{ blender_install_dir }}
+      ansible.builtin.unarchive:
+        src: "{{ blender_tmp_download }}"
+        dest: "{{ blender_install_dir }}"
+        remote_src: true
+        extra_opts:
+          - "--strip-components=1"
+      when: not blender_installed.stat.exists
+
+    - name: Eliminar el tar.xz temporal tras la extracción
+      ansible.builtin.file:
+        path: "{{ blender_tmp_download }}"
+        state: absent
+      when: not blender_installed.stat.exists
+
+    # -----------------------------------------------------------------
+    # 6. Enlace simbólico en /usr/bin (se recrea siempre para apuntar
+    #    a la versión actual, cubriendo el caso de actualización)
+    # -----------------------------------------------------------------
+    - name: Crear/actualizar el enlace simbólico /usr/bin/blender
+      ansible.builtin.file:
+        src: "{{ blender_bin }}"
+        dest: /usr/bin/blender
+        state: link
+        force: true
+
+    # -----------------------------------------------------------------
+    # 7. Localizar el icono dentro del paquete descargado (si existe)
+    #    para usarlo en la entrada de menú. Si no se encuentra, se usa
+    #    el nombre genérico "blender" como icono (fallback).
+    # -----------------------------------------------------------------
+    - name: Comprobar si existe un icono blender.svg en el paquete
+      ansible.builtin.stat:
+        path: "{{ blender_install_dir }}/blender.svg"
+      register: blender_icon_svg
+
+    - name: Copiar el icono a /usr/share/pixmaps para uso común del menú
+      ansible.builtin.copy:
+        src: "{{ blender_install_dir }}/blender.svg"
+        dest: /usr/share/pixmaps/blender.svg
+        remote_src: true
+        mode: "0644"
+      when: blender_icon_svg.stat.exists
+
+    - name: Definir icono a usar en la entrada de menú
+      ansible.builtin.set_fact:
+        blender_desktop_icon: "{{ '/usr/share/pixmaps/blender.svg' if blender_icon_svg.stat.exists else 'blender' }}"
+
+    # -----------------------------------------------------------------
+    # 8. Contenido de la entrada de menú (.desktop), común para todos
+    # -----------------------------------------------------------------
+    - name: Definir el contenido del fichero .desktop
+      ansible.builtin.set_fact:
+        blender_desktop_content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Blender
+          GenericName=Editor 3D
+          Comment=Suite de creación 3D (modelado, animación, render)
+          Exec=/usr/bin/blender %f
+          Icon={{ blender_desktop_icon }}
+          Terminal=false
+          Categories=Graphics;3DGraphics;
+          MimeType=application/x-blender;
+          StartupNotify=true
+
+    # -----------------------------------------------------------------
+    # 9. Localizar los usuarios que tienen carpeta home en el sistema
+    # -----------------------------------------------------------------
+    - name: Buscar los directorios home existentes en /home
+      ansible.builtin.find:
+        paths: /home
+        file_type: directory
+        recurse: false
+      register: home_dirs_found
+
+    # -----------------------------------------------------------------
+    # 10. Crear la entrada de menú para cada usuario existente
+    # -----------------------------------------------------------------
+    - name: Crear el directorio ~/.local/share/applications de cada usuario
+      ansible.builtin.file:
+        path: "{{ item.path }}/.local/share/applications"
+        state: directory
+        owner: "{{ item.path | basename }}"
+        group: "{{ item.path | basename }}"
+        mode: "0755"
+      loop: "{{ home_dirs_found.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Crear/actualizar el lanzador de Blender para cada usuario existente
+      ansible.builtin.copy:
+        dest: "{{ item.path }}/.local/share/applications/{{ blender_desktop_filename }}"
+        content: "{{ blender_desktop_content }}"
+        owner: "{{ item.path | basename }}"
+        group: "{{ item.path | basename }}"
+        mode: "0644"
+      loop: "{{ home_dirs_found.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    # -----------------------------------------------------------------
+    # 11. Añadir la misma entrada en /etc/skel para futuros usuarios
+    # -----------------------------------------------------------------
+    - name: Crear el directorio de aplicaciones en /etc/skel
+      ansible.builtin.file:
+        path: /etc/skel/.local/share/applications
+        state: directory
+        mode: "0755"
+
+    - name: Crear/actualizar el lanzador de Blender en /etc/skel
+      ansible.builtin.copy:
+        dest: "/etc/skel/.local/share/applications/{{ blender_desktop_filename }}"
+        content: "{{ blender_desktop_content }}"
+        mode: "0644"
+
+    # -----------------------------------------------------------------
+    # 12. Refrescar la caché del menú de aplicaciones
+    # -----------------------------------------------------------------
+    - name: Comprobar si la herramienta update-desktop-database está disponible
+      ansible.builtin.command: which update-desktop-database
+      register: update_desktop_database_bin
+      changed_when: false
+      failed_when: false
+
+    - name: Avisar si no está instalado desktop-file-utils
+      ansible.builtin.debug:
+        msg: >-
+          update-desktop-database no está disponible en este equipo.
+          Instala el paquete "desktop-file-utils" si quieres que la caché
+          del menú se refresque automáticamente.
+      when: update_desktop_database_bin.rc != 0
+
+    - name: Actualizar la caché del menú de aplicaciones para cada usuario
+      ansible.builtin.command: "update-desktop-database {{ item.path }}/.local/share/applications"
+      loop: "{{ home_dirs_found.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      changed_when: false
+      when: update_desktop_database_bin.rc == 0
+
+    - name: Actualizar la caché del menú de aplicaciones en /etc/skel
+      ansible.builtin.command: "update-desktop-database /etc/skel/.local/share/applications"
+      changed_when: false
+      when: update_desktop_database_bin.rc == 0

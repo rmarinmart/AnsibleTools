@@ -7,3 +7,4 @@
 - import_playbook: ../yamls/githubDesktop.yaml
 - import_playbook: ../yamls/aseprite.yaml
 - import_playbook: ../yamls/XPPenDrivers.yaml
+- import_playbook: ../yamls/blender.yaml
