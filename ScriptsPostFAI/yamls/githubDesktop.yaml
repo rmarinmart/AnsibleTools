@@ -56,6 +56,7 @@
     - name: Actualizar la caché de APT si el repositorio cambió
       ansible.builtin.apt:
         update_cache: true
+        lock_timeout: 30
       when: shiftkey_repo_file_result.changed
 
     - name: Instalar GitHub Desktop

@@ -54,11 +54,11 @@
     - name: Actualizar la caché de APT si el repositorio cambió
       ansible.builtin.apt:
         update_cache: true
+        lock_timeout: 30
       when: unity_repo_file_result.changed
 
     - name: Instalar Unity Hub
       ansible.builtin.apt:
         name: unityhub
         state: present
-        update_cache: true
         cache_valid_time: 3600

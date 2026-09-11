@@ -11,6 +11,7 @@
     - name: Actualizar caché de apt
       apt:
         update_cache: yes
+        lock_timeout: 30
 
     - name: Instalar dependencias (snapd)
       apt:

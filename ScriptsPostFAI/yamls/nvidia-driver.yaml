@@ -27,6 +27,7 @@
     - name: Actualizar la caché de apt
       ansible.builtin.apt:
         update_cache: true
+        lock_timeout: 30
         cache_valid_time: 3600
 
     # --------------------------------------------------------------------
