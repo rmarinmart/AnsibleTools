@@ -330,6 +330,7 @@ pc41_ce ansible_host=172.30.200.225 pc_name=PC41
 pc42_ce ansible_host=172.30.200.226 pc_name=PC42
 pc43_ce ansible_host=172.30.200.227 pc_name=PC43
 pc44_ce ansible_host=172.30.200.228 pc_name=PC44
+pc45_ce ansible_host=172.30.200.229 pc_name=PC45
 
 [ce_fila0]
 pc01_ce ansible_host=172.30.200.254 pc_name=PC01
@@ -357,6 +358,7 @@ pc41_ce ansible_host=172.30.200.225 pc_name=PC41
 pc42_ce ansible_host=172.30.200.226 pc_name=PC42
 pc43_ce ansible_host=172.30.200.227 pc_name=PC43
 pc44_ce ansible_host=172.30.200.228 pc_name=PC44
+pc45_ce ansible_host=172.30.200.229 pc_name=PC45
 
 [ce:children]
 ce_fila0
