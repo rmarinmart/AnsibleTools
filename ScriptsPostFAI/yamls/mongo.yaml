@@ -72,6 +72,7 @@
     - name: Actualizar caché de apt
       apt:
         update_cache: true
+        lock_timeout: 30
         cache_valid_time: 3600
 
     - name: Instalar dependencias (gnupg, curl)
@@ -113,6 +114,7 @@
     - name: Actualizar caché de apt tras añadir el repositorio
       apt:
         update_cache: true
+        lock_timeout: 30
       when: mongodb_repo.changed
 
     # -------------------------------------------------------------------

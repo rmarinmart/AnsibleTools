@@ -25,6 +25,7 @@
       apt:
         update_cache: true
         cache_valid_time: 3600
+        lock_timeout: 30
  
     - name: Comprobar si la arquitectura i386 ya está habilitada
       command: dpkg --print-foreign-architectures
@@ -39,6 +40,7 @@
     - name: Actualizar caché de apt tras habilitar i386
       apt:
         update_cache: true
+        lock_timeout: 30
       when: i386_added.changed
  
     - name: Instalar bibliotecas de 32 bits requeridas

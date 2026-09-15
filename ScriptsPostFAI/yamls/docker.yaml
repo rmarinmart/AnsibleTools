@@ -22,6 +22,7 @@
     - name: Actualizar caché de apt
       apt:
         update_cache: true
+        lock_timeout: 30
         cache_valid_time: 3600
 
     - name: Instalar dependencias (ca-certificates, curl)
@@ -84,6 +85,7 @@
     - name: Actualizar caché de apt tras añadir el repositorio
       apt:
         update_cache: true
+        lock_timeout: 30
       when: docker_repo.changed
 
     - name: Instalar Docker CE y plugins

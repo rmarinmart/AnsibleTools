@@ -37,6 +37,7 @@
     - name: Actualizar caché de apt tras añadir el PPA
       apt:
         update_cache: true
+        lock_timeout: 30
       when: keepassxc_ppa_added.changed
 
     - name: Instalar KeepassXC
