@@ -6,3 +6,4 @@
 - import_playbook: ../yamls/kazam.yaml
 - import_playbook: ../yamls/vite.yaml
 - import_playbook: ../yamls/datagrip.yaml
+- import_playbook: ../yamls/vscodium.yaml
