@@ -1,0 +1,64 @@
+---
+# Playbook: Instalación idempotente de VSCodium
+
+- name: Instalar VSCodium
+  hosts: all:!localhost
+  become: yes
+
+  vars:
+    vscodium_keyring_path: /usr/share/keyrings/vscodium.gpg
+    vscodium_gpg_key_url: "https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg"
+    vscodium_repo_line: >-
+      deb [arch=amd64 signed-by={{ vscodium_keyring_path }}]
+      https://download.vscodium.com/debs main
+    vscodium_repo_file: /etc/apt/sources.list.d/vscodium.list
+
+  tasks:
+
+    - name: Comprobar que wget y gnupg están instalados
+      ansible.builtin.apt:
+        name:
+          - wget
+          - gnupg
+        state: present
+
+    - name: Asegurar que el directorio /usr/share/keyrings existe
+      ansible.builtin.file:
+        path: /usr/share/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Descargar la clave GPG y convertirla a formato binario (dearmor)
+      ansible.builtin.shell: |
+        set -o pipefail
+        wget -qO - {{ vscodium_gpg_key_url }} | gpg --dearmor > {{ vscodium_keyring_path }}
+      args:
+        executable: /bin/bash
+        creates: "{{ vscodium_keyring_path }}"
+
+    - name: Ajustar permisos del keyring
+      ansible.builtin.file:
+        path: "{{ vscodium_keyring_path }}"
+        mode: "0644"
+        state: file
+
+    - name: Añadir el repositorio APT de vscodium
+      ansible.builtin.copy:
+        dest: "{{ vscodium_repo_file }}"
+        content: "{{ vscodium_repo_line }}\n"
+        mode: "0644"
+        owner: root
+        group: root
+      register: vscodium_repo_file_result
+
+    - name: Actualizar la caché de APT si el repositorio cambió
+      ansible.builtin.apt:
+        update_cache: true
+        lock_timeout: 30
+      when: vscodium_repo_file_result.changed
+
+    - name: Instalar VSCodium
+      ansible.builtin.apt:
+        name: codium
+        state: present
+        cache_valid_time: 3600
