@@ -10,7 +10,7 @@
     vscodium_gpg_key_url: "https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg"
     vscodium_repo_line: >-
       deb [arch=amd64 signed-by={{ vscodium_keyring_path }}]
-      https://download.vscodium.com/debs main
+      https://download.vscodium.com/debs vscodium main
     vscodium_repo_file: /etc/apt/sources.list.d/vscodium.list
 
   tasks:
