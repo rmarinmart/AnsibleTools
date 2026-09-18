@@ -107,3 +107,22 @@
     - name: Mostrar versión de Docker
       debug:
         msg: "{{ docker_version_output.stdout }}"
+
+    - name: Configurar daemon.json de Docker
+      ansible.builtin.copy:
+       content: |
+         {
+           "data-root": "/home/docker",
+           "bip": "172.35.0.1/16",
+           "default-address-pools": [
+             {
+               "base": "172.36.0.0/16",
+               "size": 24
+             }
+           ]
+         }
+       dest: /etc/docker/daemon.json
+       owner: root
+       group: root
+       mode: '0644'
+      notify: Reiniciar docker
