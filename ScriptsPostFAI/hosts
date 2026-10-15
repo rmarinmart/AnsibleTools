@@ -263,6 +263,7 @@ pc21_fpb_1 ansible_host=172.30.200.198 pc_name=PC21
 pc22_fpb_1 ansible_host=172.30.200.199 pc_name=PC22
 pc23_fpb_1 ansible_host=172.30.200.200 pc_name=PC23
 pc24_fpb_1 ansible_host=172.30.200.201 pc_name=PC24
+pc25_fpb_1 ansible_host=172.30.200.230 pc_name=PC25
 pc31_fpb_1 ansible_host=172.30.200.202 pc_name=PC31
 pc32_fpb_1 ansible_host=172.30.200.203 pc_name=PC32
 pc33_fpb_1 ansible_host=172.30.200.204 pc_name=PC33
@@ -289,6 +290,7 @@ pc21_fpb_1 ansible_host=172.30.200.198 pc_name=PC21
 pc22_fpb_1 ansible_host=172.30.200.199 pc_name=PC22
 pc23_fpb_1 ansible_host=172.30.200.200 pc_name=PC23
 pc24_fpb_1 ansible_host=172.30.200.201 pc_name=PC24
+pc25_fpb_1 ansible_host=172.30.200.230 pc_name=PC25
 
 [fpb_1_fila3]
 pc31_fpb_1 ansible_host=172.30.200.202 pc_name=PC31
