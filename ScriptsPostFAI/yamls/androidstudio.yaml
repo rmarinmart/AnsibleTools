@@ -1,6 +1,12 @@
 ---
-# Playbook para instalar Android Studio de forma desatendida en /opt (uso compartido)
+# Playbook para instalar/actualizar Android Studio de forma desatendida en /opt (uso compartido)
 # Basado en: https://developer.android.com/studio/install?hl=es-419
+#
+# Android Studio se instala siempre en /opt/android-studio. Un fichero marcador
+# (/opt/android-studio/.version) guarda la versión instalada: si no coincide con
+# android_studio_version, se elimina la instalación anterior y se extrae la nueva.
+# Para actualizar basta con cambiar android_studio_version (que debe coincidir con
+# el nombre del fichero: android-studio-<versión>-linux.tar.gz).
 #
 # NOTA: la fase final del "Setup Wizard" de Android Studio (descarga de
 # componentes del SDK) es un asistente gráfico interactivo y no se puede
@@ -11,38 +17,41 @@
 #
 # Uso:
 #   ansible-playbook install_android_studio.yml -i inventario
- 
+
 - name: Instalar Android Studio
   hosts: all
   become: true
   vars:
-    android_studio_url: "http://172.30.12.180/Varios/android-studio-2024.3.2.15-linux.tar.gz"
-    android_studio_archive: "/opt/downloads/android-studio-2024.3.2.15-linux.tar.gz"
+    # >>> Cambiar solo esta variable para actualizar <<<
+    android_studio_version: "rabbit1"
+    android_studio_file: "android-studio-{{ android_studio_version }}-linux.tar.gz"
+    android_studio_url: "http://172.30.12.180/Varios/{{ android_studio_file }}"
+    android_studio_archive: "/opt/downloads/{{ android_studio_file }}"
     android_studio_install_dir: "/opt/android-studio"
- 
+
   tasks:
     - name: Actualizar caché de apt
       apt:
         update_cache: true
         cache_valid_time: 3600
         lock_timeout: 30
- 
+
     - name: Comprobar si la arquitectura i386 ya está habilitada
       command: dpkg --print-foreign-architectures
       register: dpkg_foreign_arches
       changed_when: false
- 
+
     - name: Habilitar arquitectura i386 (necesaria para bibliotecas de 32 bits)
       command: dpkg --add-architecture i386
       when: "'i386' not in dpkg_foreign_arches.stdout_lines"
       register: i386_added
- 
+
     - name: Actualizar caché de apt tras habilitar i386
       apt:
         update_cache: true
         lock_timeout: 30
       when: i386_added.changed
- 
+
     - name: Instalar bibliotecas de 32 bits requeridas
       # Nota: libncurses5 se ha excluido deliberadamente. Es un paquete obsoleto,
       # ya no disponible en los repositorios de Ubuntu 24.04/Mint 22 y derivadas
@@ -56,36 +65,76 @@
           - lib32z1
           - libbz2-1.0:i386
         state: present
- 
+
     - name: Crear directorio de descargas
       file:
         path: /opt/downloads
         state: directory
         mode: "0755"
- 
+
     - name: Descargar el archivo de Android Studio
       command: "curl -fsSL {{ android_studio_url }} -o {{ android_studio_archive }}"
       args:
         creates: "{{ android_studio_archive }}"
- 
+
+    # Limpieza de descargas de versiones anteriores
+    - name: Buscar archivos de Android Studio descargados anteriormente
+      find:
+        paths: /opt/downloads
+        patterns: "android-studio-*-linux.tar.gz"
+        excludes:
+          - "{{ android_studio_file }}"
+      register: old_archives
+
+    - name: Eliminar archivos de versiones anteriores
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_archives.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    # Detección de cambio de versión
+    - name: Leer la versión instalada actualmente
+      slurp:
+        src: "{{ android_studio_install_dir }}/.version"
+      register: installed_version
+      failed_when: false
+
+    - name: Eliminar la instalación anterior si la versión es distinta
+      # Si no existe el marcador (instalación antigua sin .version), también se
+      # reinstala una vez para dejarlo todo con la versión indicada.
+      file:
+        path: "{{ android_studio_install_dir }}"
+        state: absent
+      when: >-
+        installed_version.content is not defined or
+        (installed_version.content | b64decode | trim) != android_studio_version
+
     - name: Extraer Android Studio en /opt
       unarchive:
         src: "{{ android_studio_archive }}"
         dest: /opt
         remote_src: true
         creates: "{{ android_studio_install_dir }}/bin/studio.sh"
- 
+
+    - name: Guardar la versión instalada
+      copy:
+        content: "{{ android_studio_version }}"
+        dest: "{{ android_studio_install_dir }}/.version"
+        mode: "0644"
+
     - name: Asegurar permisos de lectura/ejecución para todos en Android Studio
       shell: "chmod -R a+rX {{ android_studio_install_dir }}"
       changed_when: false
- 
+
     - name: Enlazar el lanzador de Android Studio en /usr/local/bin
       file:
         src: "{{ android_studio_install_dir }}/bin/studio.sh"
         dest: /usr/local/bin/android-studio
         state: link
         force: true
- 
+
     - name: Crear entrada de escritorio para Android Studio
       copy:
         dest: /usr/share/applications/android-studio.desktop
@@ -101,19 +150,17 @@
           Categories=Development;IDE;
           Terminal=false
           StartupWMClass=jetbrains-studio
- 
+
     - name: Verificar que el binario de Android Studio existe y es ejecutable
       stat:
         path: "{{ android_studio_install_dir }}/bin/studio.sh"
       register: studio_bin_stat
- 
+
     - name: Mostrar resultado de la instalación
       debug:
         msg: >-
-          Android Studio instalado en {{ android_studio_install_dir }}
+          Android Studio {{ android_studio_version }} instalado en {{ android_studio_install_dir }}
           (ejecutable: {{ studio_bin_stat.stat.exists and studio_bin_stat.stat.executable }}).
           Cualquier usuario puede lanzarlo con 'android-studio' o desde el
           lanzador de aplicaciones. El Setup Wizard (descarga del SDK) se
           completará la primera vez que cada usuario lo abra.
- 
-
