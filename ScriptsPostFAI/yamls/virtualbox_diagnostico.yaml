@@ -91,7 +91,9 @@
       failed_when: false
 
     - name: Fechas de instalación de los kernels
-      shell: ls -lt --time-style=long-iso /boot/vmlinuz-* | awk '{ print $6, $7, $8 }'
+      # Se usa la fecha del .list de dpkg (se escribe al instalar el paquete),
+      # no la de /boot/vmlinuz-*, que conserva la fecha de compilación del paquete.
+      shell: ls -lt --time-style=long-iso /var/lib/dpkg/info/linux-image-[0-9]*.list | awk '{ print $6, $7, $8 }' | sed 's#/var/lib/dpkg/info/##; s#\.list$##'
       args:
         executable: /bin/bash
       register: vbdiag_kernel_dates
@@ -161,7 +163,11 @@
       when: vbdiag_dkms_pub_stat.stat.exists
 
     - name: Claves enroladas en el firmware (lista MOK)
-      shell: mokutil --list-enrolled 2>&1 | grep -iE "subject:|not after" || echo "(ninguna clave MOK enrolada)"
+      # Una línea por clave: "Subject  (Not After : fecha)". La caducidad
+      # permite deducir cuándo se generó cada clave (Ubuntu las crea a 36500 días).
+      shell: |
+        out=$(mokutil --list-enrolled 2>&1 | awk '/Not After/ { sub(/^ */, ""); na = $0 } /Subject:/ { sub(/^ *Subject: */, ""); print $0 "  (" na ")" }')
+        [ -n "$out" ] && echo "$out" || echo "(ninguna clave MOK enrolada)"
       args:
         executable: /bin/bash
       register: vbdiag_mok_list
@@ -237,7 +243,10 @@
           {{ ([('Faltan metapaquetes de cabeceras: ' ~ (vbdiag_headers_meta_missing | join(', ')) ~ ' (el próximo kernel llegará sin cabeceras)')]
                if vbdiag_headers_meta_missing | length > 0 else [])
              + (['La clave de DKMS (' ~ vbdiag_dkms_pub ~ ') existe pero NO está enrolada']
-               if vbdiag_dkms_pub_stat.stat.exists and vbdiag_sb_enabled and not vbdiag_dkms_enrolled else []) }}
+               if vbdiag_dkms_pub_stat.stat.exists and vbdiag_sb_enabled and not vbdiag_dkms_enrolled else [])
+             + (['Validación de Secure Boot DESACTIVADA en shim (mokutil --disable-validation): los módulos sin firmar cargan igualmente'
+                 ~ ('' if vbdiag_mok_enrolled else '; si se reactiva, vboxdrv dejará de cargar porque la clave no está enrolada')]
+               if 'validation is disabled' in vbdiag_sb.stdout else []) }}
 
     - name: Mostrar el diagnóstico de este equipo
       debug:
@@ -267,7 +276,7 @@
           En ejecución:     {{ ansible_kernel }}  (cabeceras: {{ 'sí' if vbdiag_has_headers else 'NO' }})
           Kernels instalados:
           {{ vbdiag_kernels.stdout | indent(2, true) }}
-          Fecha de instalación de los kernels (más reciente primero):
+          Fecha de instalación de los kernels según dpkg (más reciente primero):
           {{ (vbdiag_kernel_dates.stdout | default('') or '(no disponible)') | indent(2, true) }}
           Metapaquetes instalados:
           {{ (vbdiag_meta.stdout | default('') or '(ninguno)') | indent(2, true) }}
