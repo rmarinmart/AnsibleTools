@@ -1,0 +1,325 @@
+---
+# Playbook de diagnóstico (SOLO LECTURA) para equipos en los que VirtualBox
+# ha dejado de funcionar ("Kernel driver not installed (rc=-1908)") después
+# de haber funcionado. No instala ni modifica nada en los equipos.
+#
+# Distingue entre las causas posibles:
+#   A. Faltan las cabeceras del kernel en ejecución (p.ej. tras una
+#      actualización del kernel sin el metapaquete linux-headers-generic) y
+#      vboxdrv no se pudo recompilar. NO hace falta enrolar la clave MOK:
+#      basta con relanzar virtualbox.yaml.
+#   B. La clave de firma del disco (/var/lib/shim-signed/mok/) es nueva o ha
+#      desaparecido (reinstalación con FAI, update-secureboot-policy
+#      --new-key...). Hay que enrolarla (paso manual).
+#   C. La clave del disco es la de siempre, pero el firmware ya no la tiene
+#      (actualización/reset de la BIOS, pila de la CMOS...). Hay que
+#      enrolarla (paso manual).
+#   D. El módulo está firmado con una clave distinta de la del disco.
+#
+# Uso (desde la carpeta ScriptsPostFAI):
+#   sudo ansible-playbook -i ./hosts -l pc11_dam_2 yamls/virtualbox_diagnostico.yaml
+#
+# Genera en el nodo de control (las rutas relativas se resuelven desde la
+# carpeta del playbook, yamls/):
+#   ScriptsPostFAI/informes/diagnostico_virtualbox/<equipo>.txt  -> datos detallados de cada equipo
+#   ScriptsPostFAI/informes/diagnostico_virtualbox/resumen.txt   -> una línea por equipo con el diagnóstico
+
+- name: Diagnosticar por qué vboxdrv no carga
+  hosts: all:!localhost
+  become: true
+  vars:
+    vbdiag_report_dir: "../informes/diagnostico_virtualbox"
+    vbdiag_mok_der: /var/lib/shim-signed/mok/MOK.der
+    vbdiag_mok_priv: /var/lib/shim-signed/mok/MOK.priv
+    # Clave que usan algunas versiones de DKMS en lugar de la de shim-signed
+    vbdiag_dkms_pub: /var/lib/dkms/mok.pub
+
+  tasks:
+    - name: Crear el directorio de informes en el nodo de control
+      file:
+        path: "{{ vbdiag_report_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      run_once: true
+
+    # ------------------------------------------------------------------
+    # Recogida de datos (todas las tareas son de solo lectura)
+    # ------------------------------------------------------------------
+    - name: Estado del servicio vboxdrv
+      command: systemctl is-active vboxdrv
+      register: vbdiag_service
+      changed_when: false
+      failed_when: false
+
+    - name: Comprobar si el módulo vboxdrv está cargado
+      command: grep -q "^vboxdrv " /proc/modules
+      register: vbdiag_loaded
+      changed_when: false
+      failed_when: false
+
+    - name: Versión de VirtualBox
+      command: VBoxManage --version
+      register: vbdiag_vbox_version
+      changed_when: false
+      failed_when: false
+
+    - name: Estado de Secure Boot
+      command: mokutil --sb-state
+      register: vbdiag_sb
+      changed_when: false
+      failed_when: false
+
+    - name: Comprobar si están las cabeceras del kernel en ejecución
+      command: test -e /lib/modules/{{ ansible_kernel }}/build
+      register: vbdiag_headers
+      changed_when: false
+      failed_when: false
+
+    - name: Kernels instalados, con sus cabeceras y su vboxdrv.ko
+      shell: |
+        for d in /lib/modules/*/; do
+          k=$(basename "$d")
+          [ -e "$d/build" ] && h=si || h=NO
+          ls "$d"/misc/vboxdrv.ko* >/dev/null 2>&1 && m=si || m=NO
+          echo "$k  cabeceras=$h  vboxdrv.ko=$m"
+        done
+      args:
+        executable: /bin/bash
+      register: vbdiag_kernels
+      changed_when: false
+      failed_when: false
+
+    - name: Fechas de instalación de los kernels
+      shell: ls -lt --time-style=long-iso /boot/vmlinuz-* | awk '{ print $6, $7, $8 }'
+      args:
+        executable: /bin/bash
+      register: vbdiag_kernel_dates
+      changed_when: false
+      failed_when: false
+
+    - name: Metapaquetes de kernel y de cabeceras instalados
+      shell: dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-image-generic*' 'linux-headers-generic*' 2>/dev/null | awk '$1 == "ii" { print $2 }'
+      args:
+        executable: /bin/bash
+      register: vbdiag_meta
+      changed_when: false
+      failed_when: false
+
+    - name: Ruta del módulo vboxdrv para el kernel en ejecución
+      command: modinfo -n vboxdrv
+      register: vbdiag_module_path
+      changed_when: false
+      failed_when: false
+
+    - name: Firmante del módulo vboxdrv
+      command: modinfo -F signer vboxdrv
+      register: vbdiag_module_signer
+      changed_when: false
+      failed_when: false
+
+    - name: Número de serie de la clave que firmó el módulo vboxdrv
+      command: modinfo -F sig_key vboxdrv
+      register: vbdiag_module_sigkey
+      changed_when: false
+      failed_when: false
+
+    - name: Comprobar la clave pública de firma (MOK.der)
+      stat:
+        path: "{{ vbdiag_mok_der }}"
+      register: vbdiag_mok_der_stat
+
+    - name: Comprobar la clave privada de firma (MOK.priv)
+      stat:
+        path: "{{ vbdiag_mok_priv }}"
+      register: vbdiag_mok_priv_stat
+
+    - name: Comprobar si MOK.der está enrolada en el firmware
+      command: mokutil --test-key {{ vbdiag_mok_der }}
+      register: vbdiag_mok_test
+      changed_when: false
+      failed_when: false
+      when: vbdiag_mok_der_stat.stat.exists
+
+    - name: Datos del certificado MOK.der
+      command: openssl x509 -inform DER -in {{ vbdiag_mok_der }} -noout -serial -subject -enddate
+      register: vbdiag_mok_cert
+      changed_when: false
+      failed_when: false
+      when: vbdiag_mok_der_stat.stat.exists
+
+    - name: Comprobar la clave de DKMS (si existe)
+      stat:
+        path: "{{ vbdiag_dkms_pub }}"
+      register: vbdiag_dkms_pub_stat
+
+    - name: Comprobar si la clave de DKMS está enrolada en el firmware
+      command: mokutil --test-key {{ vbdiag_dkms_pub }}
+      register: vbdiag_dkms_test
+      changed_when: false
+      failed_when: false
+      when: vbdiag_dkms_pub_stat.stat.exists
+
+    - name: Claves enroladas en el firmware (lista MOK)
+      shell: mokutil --list-enrolled 2>&1 | grep -iE "subject:|not after" || echo "(ninguna clave MOK enrolada)"
+      args:
+        executable: /bin/bash
+      register: vbdiag_mok_list
+      changed_when: false
+      failed_when: false
+
+    - name: Log del servicio vboxdrv en el arranque actual
+      command: journalctl -b -u vboxdrv --no-pager -n 30
+      register: vbdiag_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Final del log de compilación de VirtualBox
+      command: tail -n 40 /var/log/vbox-setup.log
+      register: vbdiag_setup_log
+      changed_when: false
+      failed_when: false
+
+    - name: Mensajes del kernel relacionados con vbox y firma de módulos
+      shell: dmesg | grep -iE "vbox|Loading of unsigned|Key was rejected|module verification failed|lockdown" | tail -n 20
+      args:
+        executable: /bin/bash
+      register: vbdiag_dmesg
+      changed_when: false
+      failed_when: false
+
+    # ------------------------------------------------------------------
+    # Interpretación
+    # ------------------------------------------------------------------
+    - name: Calcular indicadores
+      set_fact:
+        vbdiag_drv_ok: "{{ vbdiag_loaded.rc == 0 }}"
+        vbdiag_sb_enabled: "{{ 'SecureBoot enabled' in vbdiag_sb.stdout }}"
+        vbdiag_has_headers: "{{ vbdiag_headers.rc == 0 }}"
+        vbdiag_has_module: "{{ vbdiag_module_path.rc == 0 }}"
+        vbdiag_mok_exists: "{{ vbdiag_mok_der_stat.stat.exists and vbdiag_mok_priv_stat.stat.exists }}"
+        vbdiag_mok_enrolled: "{{ 'is already enrolled' in ((vbdiag_mok_test.stdout | default('')) ~ (vbdiag_mok_test.stderr | default(''))) }}"
+        vbdiag_mok_date: "{{ ('%Y-%m-%d %H:%M' | strftime(vbdiag_mok_der_stat.stat.mtime)) if vbdiag_mok_der_stat.stat.exists else 'no existe' }}"
+        vbdiag_dkms_enrolled: "{{ 'is already enrolled' in ((vbdiag_dkms_test.stdout | default('')) ~ (vbdiag_dkms_test.stderr | default(''))) }}"
+        # Números de serie normalizados (sin ':' ni ceros a la izquierda) para
+        # comparar la clave que firmó el módulo con la del disco.
+        vbdiag_module_serial: "{{ vbdiag_module_sigkey.stdout | upper | regex_replace('[^0-9A-F]', '') | regex_replace('^0+', '') }}"
+        vbdiag_mok_serial: >-
+          {{ (vbdiag_mok_cert.stdout_lines | default([]) | select('match', '^serial=') | list | first | default(''))
+             | regex_replace('^serial=', '') | upper | regex_replace('[^0-9A-F]', '') | regex_replace('^0+', '') }}
+        # Metapaquetes de cabeceras que faltan respecto a los de kernel instalados
+        vbdiag_headers_meta_missing: >-
+          {{ vbdiag_meta.stdout_lines | select('match', '^linux-image-')
+             | map('regex_replace', '^linux-image-', 'linux-headers-') | list
+             | difference(vbdiag_meta.stdout_lines) }}
+
+    - name: Emitir el diagnóstico
+      set_fact:
+        vbdiag_verdict: >-
+          {%- if vbdiag_drv_ok -%}
+          OK: vboxdrv está cargado, VirtualBox debería funcionar
+          {%- elif not vbdiag_has_headers -%}
+          A: faltan las cabeceras del kernel en ejecución ({{ ansible_kernel }}). NO hace falta enrolar: relanzar virtualbox.yaml
+          {%- elif not vbdiag_has_module -%}
+          A: vboxdrv no está compilado para el kernel en ejecución ({{ ansible_kernel }}) aunque hay cabeceras. Relanzar virtualbox.yaml; si falla, revisar vbox-setup.log
+          {%- elif not vbdiag_sb_enabled -%}
+          OTRO: Secure Boot desactivado y el módulo existe pero no carga. Revisar journalctl/dmesg en el informe
+          {%- elif not vbdiag_mok_exists -%}
+          B: no existe la clave de firma en disco ({{ vbdiag_mok_der }} / MOK.priv). Paso manual necesario
+          {%- elif not vbdiag_mok_enrolled -%}
+          B/C: la clave del disco (fecha {{ vbdiag_mok_date }}) NO está enrolada en el firmware. Fecha reciente = B (clave regenerada); fecha de la instalación inicial = C (lista MOK de la BIOS borrada). Paso manual necesario
+          {%- elif vbdiag_module_serial and vbdiag_mok_serial and vbdiag_module_serial != vbdiag_mok_serial -%}
+          D: el módulo está firmado con una clave distinta de MOK.der (serie {{ vbdiag_module_serial }} vs {{ vbdiag_mok_serial }}). Relanzar virtualbox.yaml para refirmarlo
+          {%- else -%}
+          OTRO: clave enrolada y módulo presente, pero no carga. Revisar journalctl/dmesg en el informe
+          {%- endif -%}
+        vbdiag_warnings: >-
+          {{ ([('Faltan metapaquetes de cabeceras: ' ~ (vbdiag_headers_meta_missing | join(', ')) ~ ' (el próximo kernel llegará sin cabeceras)')]
+               if vbdiag_headers_meta_missing | length > 0 else [])
+             + (['La clave de DKMS (' ~ vbdiag_dkms_pub ~ ') existe pero NO está enrolada']
+               if vbdiag_dkms_pub_stat.stat.exists and vbdiag_sb_enabled and not vbdiag_dkms_enrolled else []) }}
+
+    - name: Mostrar el diagnóstico de este equipo
+      debug:
+        msg: "{{ [vbdiag_verdict] + vbdiag_warnings }}"
+
+    - name: Guardar el informe detallado de este equipo en el nodo de control
+      copy:
+        dest: "{{ vbdiag_report_dir }}/{{ inventory_hostname }}.txt"
+        mode: "0644"
+        content: |
+          Equipo:           {{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }})
+          Fecha informe:    {{ ansible_date_time.iso8601 }}
+          DIAGNÓSTICO:      {{ vbdiag_verdict }}
+          {% for w in vbdiag_warnings %}
+          AVISO:            {{ w }}
+          {% endfor %}
+
+          == VirtualBox ==
+          Versión:          {{ vbdiag_vbox_version.stdout | default('') or 'no encontrada' }}
+          Servicio vboxdrv: {{ vbdiag_service.stdout }}
+          Módulo cargado:   {{ 'sí' if vbdiag_drv_ok else 'NO' }}
+          Módulo (ruta):    {{ vbdiag_module_path.stdout if vbdiag_has_module else 'NO existe para el kernel en ejecución' }}
+          Módulo firmante:  {{ vbdiag_module_signer.stdout | default('') or '(sin firmar)' }}
+          Módulo sig_key:   {{ vbdiag_module_sigkey.stdout | default('') or '-' }}
+
+          == Kernel ==
+          En ejecución:     {{ ansible_kernel }}  (cabeceras: {{ 'sí' if vbdiag_has_headers else 'NO' }})
+          Kernels instalados:
+          {{ vbdiag_kernels.stdout | indent(2, true) }}
+          Fecha de instalación de los kernels (más reciente primero):
+          {{ (vbdiag_kernel_dates.stdout | default('') or '(no disponible)') | indent(2, true) }}
+          Metapaquetes instalados:
+          {{ (vbdiag_meta.stdout | default('') or '(ninguno)') | indent(2, true) }}
+
+          == Secure Boot y claves ==
+          Secure Boot:      {{ vbdiag_sb.stdout | default('') or vbdiag_sb.stderr | default('') or 'desconocido' }}
+          MOK.der:          {{ 'existe, fecha ' ~ vbdiag_mok_date if vbdiag_mok_der_stat.stat.exists else 'NO existe' }}
+          MOK.priv:         {{ 'existe' if vbdiag_mok_priv_stat.stat.exists else 'NO existe' }}
+          MOK.der enrolada: {{ ((vbdiag_mok_test.stdout | default('')) ~ (vbdiag_mok_test.stderr | default(''))) | trim or '-' }}
+          Certificado MOK.der:
+          {{ (vbdiag_mok_cert.stdout | default('') or '-') | indent(2, true) }}
+          Clave DKMS:       {{ (vbdiag_dkms_pub ~ ' ' ~ ('enrolada' if vbdiag_dkms_enrolled else 'NO enrolada')) if vbdiag_dkms_pub_stat.stat.exists else 'no existe' }}
+          Claves enroladas en el firmware:
+          {{ vbdiag_mok_list.stdout | indent(2, true) }}
+
+          == journalctl -b -u vboxdrv ==
+          {{ (vbdiag_journal.stdout | default('') or '(sin entradas)') | indent(2, true) }}
+
+          == /var/log/vbox-setup.log (final) ==
+          {{ (vbdiag_setup_log.stdout | default('') or '(no existe)') | indent(2, true) }}
+
+          == dmesg (vbox / firma de módulos) ==
+          {{ (vbdiag_dmesg.stdout | default('') or '(sin mensajes)') | indent(2, true) }}
+      delegate_to: localhost
+
+    - name: Construir el resumen de todos los equipos
+      # Se construye una sola vez (run_once) a partir de hostvars, en vez de
+      # con lineinfile desde cada equipo, para evitar que varios equipos
+      # escriban a la vez en el mismo fichero. Incluye también los equipos
+      # inaccesibles o que hayan fallado.
+      set_fact:
+        vbdiag_summary: >-
+          {%- set lines = [] -%}
+          {%- for h in ansible_play_hosts_all -%}
+          {%- set hv = hostvars[h] -%}
+          {%- set warnings = hv.vbdiag_warnings | default([]) -%}
+          {%- set _ = lines.append(h ~ ' (' ~ ((hv.ansible_default_ipv4 | default({})).address | default('sin IP')) ~ '): '
+                ~ (hv.vbdiag_verdict | default('SIN DATOS (equipo inaccesible o error)'))
+                ~ ((' | AVISOS: ' ~ (warnings | join(' / '))) if warnings | length > 0 else '')) -%}
+          {%- endfor -%}
+          {{ lines }}
+      run_once: true
+
+    - name: Guardar el resumen en el nodo de control
+      copy:
+        dest: "{{ vbdiag_report_dir }}/resumen.txt"
+        mode: "0644"
+        content: "{{ vbdiag_summary | join('\n') }}\n"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Mostrar el resumen
+      debug:
+        msg: "{{ vbdiag_summary }}"
+      run_once: true

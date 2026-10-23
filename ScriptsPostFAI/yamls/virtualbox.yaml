@@ -11,19 +11,18 @@
     virtualbox_keyring_path: /usr/share/keyrings/oracle-virtualbox-2016.gpg
     virtualbox_sources_path: /etc/apt/sources.list.d/virtualbox.list
     virtualbox_package: virtualbox-7.2
+    # Usuarios que se añaden al grupo vboxusers (si existen en el equipo)
+    virtualbox_users:
+      - ciclosm
+      - ciclost
     # Fichero local (en el nodo de control) donde se listan los equipos que
     # necesitan enrolar manualmente la clave MOK para poder cargar vboxdrv.
-    virtualbox_secureboot_report_path: "./informe_secureboot_pendiente.txt"
+    # Las rutas relativas se resuelven desde la carpeta de este playbook
+    # (yamls/), así que el informe queda en ScriptsPostFAI/informes/.
+    virtualbox_report_dir: "../informes"
+    virtualbox_secureboot_report_path: "{{ virtualbox_report_dir }}/informe_secureboot_pendiente.txt"
 
   tasks:
-    - name: Reiniciar el informe de equipos pendientes de Secure Boot
-      copy:
-        dest: "{{ virtualbox_secureboot_report_path }}"
-        content: ""
-        force: true
-      delegate_to: localhost
-      run_once: true
-
     - name: Actualizar caché de apt
       apt:
         update_cache: true
@@ -104,9 +103,69 @@
       debug:
         msg: "VirtualBox {{ virtualbox_version_output.stdout }} instalado correctamente"
 
-    - name: Instalar cabeceras del kernel en ejecución (necesarias para DKMS)
+    - name: Obtener la base de datos de usuarios (passwd) vía NSS
+      getent:
+        database: passwd
+        split: ":"
+
+    - name: Añadir los usuarios existentes al grupo vboxusers
+      # El grupo vboxusers lo crea el paquete de VirtualBox. Solo se tocan los
+      # usuarios que existen en el equipo, para no crear cuentas nuevas.
+      user:
+        name: "{{ item }}"
+        groups: vboxusers
+        append: true
+      loop: "{{ virtualbox_users }}"
+      when: item in ansible_facts.getent_passwd
+
+    - name: "AVISO: usuarios que no existen en este equipo"
+      debug:
+        msg: "No se ha añadido a vboxusers a {{ item }} porque no existe en este equipo"
+      loop: "{{ virtualbox_users }}"
+      when: item not in ansible_facts.getent_passwd
+
+    - name: Detectar los metapaquetes de kernel instalados (linux-image-generic*)
+      # Ubuntu y Mint reciben cada kernel nuevo a través de un metapaquete
+      # (linux-image-generic o, con HWE, linux-image-generic-hwe-XX.XX). Las
+      # cabeceras tienen su metapaquete equivalente (linux-headers-generic[-hwe-XX.XX]);
+      # si no está instalado, el siguiente kernel llega sin cabeceras, vboxdrv
+      # no se puede recompilar al arrancar y VirtualBox deja de funcionar
+      # aunque la clave MOK siga enrolada.
+      shell: dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-image-generic*' 2>/dev/null | awk '$1 == "ii" { print $2 }'
+      args:
+        executable: /bin/bash
+      register: virtualbox_kernel_meta
+      changed_when: false
+
+    - name: Calcular los metapaquetes de cabeceras correspondientes
+      # linux-image-generic -> linux-headers-generic,
+      # linux-image-generic-hwe-24.04 -> linux-headers-generic-hwe-24.04, etc.
+      # Si no se detecta ninguno, se usa linux-headers-generic.
+      set_fact:
+        virtualbox_headers_meta: >-
+          {{ virtualbox_kernel_meta.stdout_lines
+             | map('regex_replace', '^linux-image-', 'linux-headers-')
+             | list
+             | default(['linux-headers-generic'], true) }}
+
+    - name: "AVISO: no se ha detectado ningún metapaquete linux-image-generic*"
+      # Puede pasar en distribuciones con su propio metapaquete de kernel
+      # (p.ej. LliureX). Se instala linux-headers-generic por defecto, pero
+      # conviene comprobar que corresponde al kernel que recibe el equipo.
+      debug:
+        msg: >
+          No se ha encontrado ningún metapaquete linux-image-generic* en este
+          equipo; se instalará linux-headers-generic. Comprueba con
+          'dpkg -S /boot/vmlinuz-{{ ansible_kernel }}' y 'apt rdepends --installed
+          linux-image-{{ ansible_kernel }}' qué metapaquete trae el kernel y
+          usa su equivalente linux-headers-*.
+      when: virtualbox_kernel_meta.stdout_lines | length == 0
+
+    - name: Instalar cabeceras del kernel en ejecución y su metapaquete (necesarias para compilar vboxdrv)
+      # Las del kernel en ejecución hacen falta ya; el metapaquete garantiza
+      # que cada actualización futura del kernel traiga también sus cabeceras.
       apt:
-        name: "linux-headers-{{ ansible_kernel }}"
+        name: "{{ ['linux-headers-' ~ ansible_kernel] + virtualbox_headers_meta }}"
         state: present
 
     - name: Comprobar si el servicio vboxdrv está activo
@@ -116,11 +175,12 @@
       failed_when: false
 
     - name: Comprobar el estado de Secure Boot (mokutil)
-      # Se comprueba ANTES de intentar vboxconfig: si Secure Boot está activo
-      # y vboxdrv no ha cargado, ya sabemos que vboxconfig va a intentar
-      # generar y enrolar una clave MOK, lo cual exige una contraseña
-      # interactiva (mokutil --import lee de /dev/tty, ignora stdin) y se
-      # queda colgado en un playbook desatendido. Mejor no lanzarlo siquiera.
+      # Se comprueba ANTES de intentar vboxconfig: si Secure Boot está activo,
+      # vboxdrv no ha cargado y la clave de firma aún no está enrolada,
+      # vboxconfig va a intentar generar y enrolar una clave MOK, lo cual
+      # exige una contraseña interactiva (mokutil --import lee de /dev/tty,
+      # ignora stdin) y se queda colgado en un playbook desatendido. En ese
+      # caso es mejor no lanzarlo siquiera.
       command: mokutil --sb-state
       register: virtualbox_secureboot_check
       changed_when: false
@@ -133,33 +193,58 @@
           {{ virtualbox_drv_status.stdout != 'active'
              and 'SecureBoot enabled' in (virtualbox_secureboot_check.stdout | default('')) }}
 
-    - name: Reconfigurar el módulo de VirtualBox (vboxconfig) si vboxdrv no está activo y Secure Boot está desactivado
-      # Cubre el caso típico de Secure Boot desactivado pero DKMS no compiló
-      # bien en la instalación (p.ej. porque faltaban las cabeceras del kernel,
-      # ya solucionado en la tarea anterior). No se lanza si Secure Boot está
-      # activo (ver comprobación anterior): en ese caso el problema es de
-      # firma/enrolado y requiere intervención manual, así que evitamos el
+    - name: Comprobar si la clave de firma de módulos ya está enrolada (mokutil --test-key)
+      # vboxconfig firma el módulo con la clave de /var/lib/shim-signed/mok/
+      # (la misma que usa DKMS en Ubuntu) y solo pide contraseña si tiene que
+      # generarla o enrolarla. Si ya está enrolada (caso típico: el equipo se
+      # configuró a inicio de curso y vboxdrv ha dejado de cargar tras una
+      # actualización del kernel), vboxconfig recompila y firma sin
+      # interacción, así que se puede lanzar con seguridad.
+      shell: test -f /var/lib/shim-signed/mok/MOK.priv && mokutil --test-key /var/lib/shim-signed/mok/MOK.der
+      args:
+        executable: /bin/bash
+      register: virtualbox_mok_test
+      changed_when: false
+      failed_when: false
+      when: virtualbox_secureboot_enabled
+
+    - name: Determinar si la clave de firma ya está enrolada
+      set_fact:
+        virtualbox_mok_enrolled: >-
+          {{ virtualbox_secureboot_enabled
+             and 'is already enrolled' in ((virtualbox_mok_test.stdout | default('')) ~ (virtualbox_mok_test.stderr | default(''))) }}
+
+    - name: Determinar si se puede lanzar vboxconfig de forma desatendida
+      set_fact:
+        virtualbox_can_vboxconfig: >-
+          {{ virtualbox_drv_status.stdout != 'active'
+             and (not virtualbox_secureboot_enabled or virtualbox_mok_enrolled) }}
+
+    - name: Reconfigurar el módulo de VirtualBox (vboxconfig) si vboxdrv no está activo y no hace falta enrolar la clave
+      # Cubre dos casos: Secure Boot desactivado, o Secure Boot activo con la
+      # clave ya enrolada. En ambos el módulo no compiló bien (p.ej. porque
+      # faltaban las cabeceras del kernel, ya solucionado en la tarea
+      # anterior). No se lanza si Secure Boot está activo y la clave no está
+      # enrolada (ver comprobaciones anteriores): en ese caso el problema es
+      # de firma/enrolado y requiere intervención manual, así que evitamos el
       # riesgo de que se quede colgado esperando una contraseña que nunca
       # llegará. El timeout se mantiene como red de seguridad adicional por
-      # si la compilación de DKMS se alarga o se atasca por otro motivo.
+      # si la compilación se alarga o se atasca por otro motivo.
       command: timeout 60 /sbin/vboxconfig
       register: virtualbox_vboxconfig_result
       changed_when: "'done.' in virtualbox_vboxconfig_result.stdout"
       failed_when: false
-      when:
-        - virtualbox_drv_status.stdout != 'active'
-        - not virtualbox_secureboot_enabled
+      when: virtualbox_can_vboxconfig
 
     - name: "AVISO: vboxconfig se agotó por timeout"
       debug:
         msg: >
-          vboxconfig no terminó en 60s a pesar de que Secure Boot está
-          desactivado. Puede tratarse de una compilación DKMS especialmente
+          vboxconfig no terminó en 60s a pesar de que no hacía falta enrolar
+          la clave MOK. Puede tratarse de una compilación especialmente
           lenta o de un problema distinto; revisa manualmente con
-          'sudo dkms status' y 'cat /var/log/vbox-install.log' en este equipo.
+          'cat /var/log/vbox-setup.log' en este equipo.
       when: >
-        virtualbox_drv_status.stdout != 'active'
-        and not virtualbox_secureboot_enabled
+        virtualbox_can_vboxconfig
         and virtualbox_vboxconfig_result.rc is defined
         and virtualbox_vboxconfig_result.rc == 124
 
@@ -168,9 +253,7 @@
       register: virtualbox_drv_status_retry
       changed_when: false
       failed_when: false
-      when:
-        - virtualbox_drv_status.stdout != 'active'
-        - not virtualbox_secureboot_enabled
+      when: virtualbox_can_vboxconfig
 
     - name: Consolidar el estado final de vboxdrv
       set_fact:
@@ -181,9 +264,9 @@
     - name: Determinar si el equipo necesita enrolado manual de la clave MOK
       set_fact:
         virtualbox_needs_mok_enrollment: >-
-          {{ not virtualbox_drv_active and virtualbox_secureboot_enabled }}
+          {{ not virtualbox_drv_active and virtualbox_secureboot_enabled and not virtualbox_mok_enrolled }}
         virtualbox_needs_investigation: >-
-          {{ not virtualbox_drv_active and not virtualbox_secureboot_enabled }}
+          {{ not virtualbox_drv_active and (not virtualbox_secureboot_enabled or virtualbox_mok_enrolled) }}
 
     - name: "AVISO: este equipo requiere firmar/enrolar la clave MOK manualmente"
       debug:
@@ -196,30 +279,65 @@
           posible.
       when: virtualbox_needs_mok_enrollment
 
-    - name: "AVISO: vboxdrv no carga por un motivo distinto a Secure Boot"
+    - name: "AVISO: vboxdrv no carga por un motivo distinto al enrolado de la clave"
       debug:
         msg: >
-          Secure Boot no está activo, pero vboxdrv sigue sin cargar tras
-          'vboxconfig'. Revisa manualmente con 'sudo dkms status' y
-          'dmesg | grep -i vbox' en este equipo; puede tratarse de un
-          problema de compilación no relacionado con la firma del módulo.
+          No hace falta enrolar la clave MOK (Secure Boot desactivado o clave
+          ya enrolada), pero vboxdrv sigue sin cargar tras 'vboxconfig'.
+          Lanza el playbook virtualbox_diagnostico.yaml en este equipo o
+          revisa manualmente '/var/log/vbox-setup.log' y
+          'dmesg | grep -i vbox'.
       when: virtualbox_needs_investigation
 
-    - name: Añadir este equipo al informe de pendientes de Secure Boot
-      lineinfile:
-        path: "{{ virtualbox_secureboot_report_path }}"
-        line: "{{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }}) - Secure Boot activo, pendiente de enrolado MOK"
-        create: true
-      delegate_to: localhost
-      when: virtualbox_needs_mok_enrollment
+    - name: Preparar la línea de este equipo para el informe
+      set_fact:
+        virtualbox_report_line: >-
+          {%- if virtualbox_needs_mok_enrollment -%}
+          {{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }}) - Secure Boot activo, pendiente de enrolado MOK
+          {%- elif virtualbox_needs_investigation -%}
+          {{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }}) - vboxdrv no carga, NO es falta de enrolado MOK, revisar manualmente
+          {%- endif -%}
 
-    - name: Añadir este equipo al informe como pendiente de revisión manual
-      lineinfile:
-        path: "{{ virtualbox_secureboot_report_path }}"
-        line: "{{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('sin IP detectada') }}) - vboxdrv no carga, NO es Secure Boot, revisar manualmente"
-        create: true
+    - name: Construir el informe de todos los equipos
+      # Se construye una sola vez (run_once) a partir de hostvars, en vez de
+      # con lineinfile desde cada equipo, para evitar que varios equipos
+      # escriban a la vez en el mismo fichero y se pierdan líneas. Los equipos
+      # que no han llegado hasta aquí (inaccesibles o con un error previo)
+      # también se incluyen.
+      set_fact:
+        virtualbox_report_lines: >-
+          {%- set lines = [] -%}
+          {%- for h in ansible_play_hosts_all -%}
+          {%- set hv = hostvars[h] -%}
+          {%- if hv.virtualbox_report_line is not defined -%}
+          {%- set _ = lines.append(h ~ ' - el playbook no se completó (equipo inaccesible o error previo), revisar la salida de ansible') -%}
+          {%- elif hv.virtualbox_report_line -%}
+          {%- set _ = lines.append(hv.virtualbox_report_line) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ lines }}
+      run_once: true
+
+    - name: Crear la carpeta de informes en el nodo de control
+      file:
+        path: "{{ virtualbox_report_dir }}"
+        state: directory
+        mode: "0755"
       delegate_to: localhost
-      when: virtualbox_needs_investigation
+      run_once: true
+
+    - name: Guardar el informe en el nodo de control
+      copy:
+        dest: "{{ virtualbox_secureboot_report_path }}"
+        mode: "0644"
+        content: "{{ (virtualbox_report_lines | join('\n') ~ '\n') if virtualbox_report_lines else '' }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Mostrar el resumen
+      debug:
+        msg: "{{ virtualbox_report_lines if virtualbox_report_lines else 'Ningún equipo pendiente de enrolado manual de Secure Boot.' }}"
+      run_once: true
 
     - name: Fallar la tarea si vboxdrv no está activo tras todos los intentos
       # No detiene el resto del playbook en otros hosts (estrategia linear por
@@ -231,23 +349,3 @@
           Revisa {{ virtualbox_secureboot_report_path }} para el listado
           completo de equipos pendientes tras esta ejecución.
       when: not virtualbox_drv_active
-
-- name: Mostrar resumen final de equipos pendientes de Secure Boot
-  hosts: localhost
-  gather_facts: false
-  vars:
-    virtualbox_secureboot_report_path: "./informe_secureboot_pendiente.txt"
-  tasks:
-    - name: Leer el informe generado
-      slurp:
-        src: "{{ virtualbox_secureboot_report_path }}"
-      register: virtualbox_report_raw
-      failed_when: false
-
-    - name: Mostrar el resumen
-      debug:
-        msg: >-
-          {{ (virtualbox_report_raw.content | b64decode).splitlines()
-             if virtualbox_report_raw.content is defined and
-                (virtualbox_report_raw.content | b64decode | trim) != ''
-             else 'Ningún equipo pendiente de enrolado manual de Secure Boot.' }}
