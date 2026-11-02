@@ -1,0 +1,10 @@
+---
+- name: Instalar ssvnc
+  hosts: all:!localhost
+  become: yes
+
+  tasks:
+    - name: Instalar ssvnc (para que los alumnos vean el cursor al compartir con epoptes)
+      ansible.builtin.apt:
+        name: 
+           - ssvnc

@@ -20,4 +20,3 @@
 - import_playbook: ../yamls/mongo.yaml
 - import_playbook: ../yamls/virt-viewer.yaml
 - import_playbook: ../yamls/remmina.yaml
-- import_playbook: ../yamls/xtightvncviewer.yaml

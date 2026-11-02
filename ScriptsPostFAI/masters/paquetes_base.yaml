@@ -4,6 +4,7 @@
 - import_playbook: ../yamls/aptupdate.yaml
 - import_playbook: ../yamls/libreoffice.yaml
 - import_playbook: ../yamls/epoptes.yaml
+- import_playbook: ../yamls/ssvnc.yaml
 - import_playbook: ../yamls/ldap.yaml
 - import_playbook: ../yamls/inkscape.yaml
 - import_playbook: ../yamls/gimp.yaml
