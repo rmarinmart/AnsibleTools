@@ -17,6 +17,9 @@
       - containerd.io
       - docker-buildx-plugin
       - docker-compose-plugin
+    docker_users:
+      - ciclosm
+      - ciclost
 
   tasks:
     - name: Actualizar caché de apt
@@ -93,11 +96,57 @@
         name: "{{ docker_packages }}"
         state: present
 
+    - name: Crear la carpeta de datos de Docker en /home
+      # Se usa /home como data-root para que imágenes y contenedores vayan a la
+      # partición de /home y no a /var/lib/docker, en la raíz. 0711 es el modo
+      # con el que dockerd crea su data-root por defecto.
+      file:
+        path: /home/docker
+        state: directory
+        owner: root
+        group: root
+        mode: "0711"
+
+    - name: Configurar daemon.json de Docker
+      copy:
+        content: |
+          {
+            "data-root": "/home/docker",
+            "bip": "172.35.0.1/16",
+            "default-address-pools": [
+              {
+                "base": "172.36.0.0/16",
+                "size": 24
+              }
+            ]
+          }
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: "0644"
+      # Docker solo lee daemon.json al arrancar
+      notify: Reiniciar Docker
+
     - name: Asegurar que el servicio Docker esté activo y habilitado
       service:
         name: docker
         state: started
         enabled: true
+
+    - name: Obtener los usuarios locales
+      getent:
+        database: passwd
+
+    - name: Añadir los usuarios existentes al grupo docker
+      # Sin el grupo docker no pueden usar el socket del daemon sin sudo.
+      # El grupo lo crea el paquete docker-ce. El cambio se aplica en el
+      # siguiente inicio de sesión del usuario.
+      user:
+        name: "{{ item }}"
+        groups: docker
+        append: true
+      loop: "{{ docker_users }}"
+      when: item in ansible_facts.getent_passwd
 
     - name: Verificar versión de Docker instalada
       command: docker --version
@@ -108,20 +157,8 @@
       debug:
         msg: "{{ docker_version_output.stdout }}"
 
-    - name: Configurar daemon.json de Docker
-      ansible.builtin.copy:
-       content: |
-         {
-           "data-root": "/home/docker",
-           "bip": "172.35.0.1/16",
-           "default-address-pools": [
-             {
-               "base": "172.36.0.0/16",
-               "size": 24
-             }
-           ]
-         }
-       dest: /etc/docker/daemon.json
-       owner: root
-       group: root
-       mode: '0644'
+  handlers:
+    - name: Reiniciar Docker
+      service:
+        name: docker
+        state: restarted
