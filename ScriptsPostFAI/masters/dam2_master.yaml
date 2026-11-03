@@ -9,5 +9,6 @@
 - import_playbook: ../yamls/visualstudiocode.yaml
 - import_playbook: ../yamls/maven.yaml
 - import_playbook: ../yamls/openjdk.yaml
+- import_playbook: ../yamls/androidstudio.yaml
 #androidstudio
 #flatter
