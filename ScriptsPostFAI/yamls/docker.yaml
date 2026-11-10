@@ -149,6 +149,15 @@
         group: root
         mode: "0711"
 
+    - name: Crear la carpeta de drop-ins de containerd
+      # copy no crea los directorios padre del destino.
+      file:
+        path: "{{ docker_containerd_dropin | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Configurar la raíz de containerd con un drop-in de systemd
       # Se pasa --root en la línea de comandos en vez de editar
       # /etc/containerd/config.toml porque ese fichero es un conffile del
