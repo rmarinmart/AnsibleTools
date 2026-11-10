@@ -56,6 +56,9 @@ python3 CreatePasswordHash.py 'clave'  # por argumento: queda en el historial
 - Las claves GPG se descargan con `curl | gpg --dearmor` en lugar de `get_url`, por un bug de ansible-core con Python 3.12+ (`cert_file`).
 - Codename del repositorio: `${UBUNTU_CODENAME:-$VERSION_CODENAME}` de `/etc/os-release`, no `ansible_distribution_release`, que en Mint devuelve el codename propio (p.ej. "zena").
 - Nada interactivo: nada puede quedarse esperando una entrada por teclado (p.ej. `mokutil --import` pide una contraseña por `/dev/tty`).
+- Los nombres de tarea no deben incluir valores que vengan de variables (rutas, carpetas…): si se cambia la variable, el nombre que se ve al ejecutar engaña. Mejor nombres genéricos («Crear la nueva carpeta de datos de containerd»).
+- `copy` no crea los directorios padre del destino; hay que crearlos antes con `file: state=directory` (p.ej. `/etc/systemd/system/<servicio>.service.d/` para un drop-in).
+- No editar ficheros de configuración que instala un paquete (conffiles, p.ej. `/etc/containerd/config.toml`): una actualización podría quedarse preguntando qué versión conservar. Mejor un drop-in de systemd o un fichero propio.
 
 ## Equipos de aula
 
@@ -65,6 +68,12 @@ python3 CreatePasswordHash.py 'clave'  # por argumento: queda en el historial
 - La **BIOS tiene contraseña de Conselleria** y el departamento no la tiene, así que no se puede desactivar Secure Boot.
 - Mint se reinstala desde una ISO nueva al acabar cada curso y después se configura con los masters. La última vez fue en julio de 2026, con Mint 22.3.
 - `ciclosm` y `ciclost` son siempre usuarios locales.
+
+## Docker
+
+- `yamls/docker.yaml` lleva a `/home` tanto el `data-root` de Docker (`docker_data_root`, en `daemon.json`) como la raíz de containerd (`docker_containerd_root`). Desde Docker 29, las instalaciones nuevas usan el almacén de imágenes de containerd, así que las imágenes y capas van a `/var/lib/containerd` y no al `data-root`.
+- La raíz de containerd se cambia con un drop-in de systemd (`ExecStart=/usr/bin/containerd --root …`), no en `config.toml`.
+- El playbook migra las instalaciones antiguas: si existe `/var/lib/containerd`, para Docker y containerd, copia con `rsync -aHAX` y borra el original. Si falla `rsync`, los servicios se quedan parados y los datos originales intactos.
 
 ## VirtualBox y Secure Boot
 
