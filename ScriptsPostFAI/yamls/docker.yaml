@@ -103,7 +103,7 @@
         name: "{{ docker_packages }}"
         state: present
 
-    - name: Crear la carpeta de datos de Docker en /home
+    - name: Crear la carpeta de datos de Docker (data-root)
       # Se usa /home como data-root para que imágenes y contenedores vayan a la
       # partición de /home y no a /var/lib/docker, en la raíz. 0711 es el modo
       # con el que dockerd crea su data-root por defecto.
@@ -140,7 +140,7 @@
     # (/var/lib/containerd) y no al data-root de Docker, así que siguen
     # llenando la partición raíz aunque data-root esté en /home.
 
-    - name: Crear la carpeta de datos de containerd en /home
+    - name: Crear la nueva carpeta de datos de containerd
       # 0711 es el modo con el que containerd crea su raíz por defecto.
       file:
         path: "{{ docker_containerd_root }}"
@@ -180,7 +180,7 @@
         path: "{{ docker_containerd_old_root }}"
       register: docker_containerd_old_root_stat
 
-    - name: Mover la raíz de containerd a /home
+    - name: Mover los datos de containerd a la nueva raíz
       # Se ejecuta cuando cambia el drop-in (instalación nueva o primera
       # pasada con esta versión del playbook) o cuando sigue existiendo
       # /var/lib/containerd. En una instalación nueva solo hay unas carpetas
@@ -208,7 +208,7 @@
             - docker.service
             - containerd.service
 
-        - name: Copiar /var/lib/containerd a /home/containerd
+        - name: Realizar la copia de containerd
           # -H enlaces duros, -A ACL, -X xattrs. Si falla, el playbook se
           # detiene aquí: los datos originales siguen intactos y los servicios
           # quedan parados para que se revise a mano.
