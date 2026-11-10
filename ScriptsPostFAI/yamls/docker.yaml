@@ -11,6 +11,10 @@
   vars:
     docker_keyring_path: /etc/apt/keyrings/docker.asc
     docker_sources_path: /etc/apt/sources.list.d/docker.sources
+    docker_data_root: /home/docker
+    docker_containerd_root: /home/containerd-data
+    docker_containerd_old_root: /var/lib/containerd
+    docker_containerd_dropin: /etc/systemd/system/containerd.service.d/root.conf
     docker_packages:
       - docker-ce
       - docker-ce-cli
@@ -28,11 +32,14 @@
         lock_timeout: 30
         cache_valid_time: 3600
 
-    - name: Instalar dependencias (ca-certificates, curl)
+    - name: Instalar dependencias (ca-certificates, curl, rsync)
+      # rsync se usa para mover /var/lib/containerd a /home conservando
+      # enlaces duros, ACL y xattrs (overlayfs guarda los whiteouts en xattrs).
       apt:
         name:
           - ca-certificates
           - curl
+          - rsync
         state: present
 
     - name: Crear directorio /etc/apt/keyrings
@@ -101,7 +108,7 @@
       # partición de /home y no a /var/lib/docker, en la raíz. 0711 es el modo
       # con el que dockerd crea su data-root por defecto.
       file:
-        path: /home/docker
+        path: "{{ docker_data_root }}"
         state: directory
         owner: root
         group: root
@@ -111,7 +118,7 @@
       copy:
         content: |
           {
-            "data-root": "/home/docker",
+            "data-root": "{{ docker_data_root }}",
             "bip": "172.35.0.1/16",
             "default-address-pools": [
               {
@@ -126,6 +133,101 @@
         mode: "0644"
       # Docker solo lee daemon.json al arrancar
       notify: Reiniciar Docker
+
+    # --- Raíz de containerd en /home ---
+    # Desde Docker 29 las instalaciones nuevas usan el almacén de imágenes de
+    # containerd: imágenes y capas de contenedores van a la raíz de containerd
+    # (/var/lib/containerd) y no al data-root de Docker, así que siguen
+    # llenando la partición raíz aunque data-root esté en /home.
+
+    - name: Crear la carpeta de datos de containerd en /home
+      # 0711 es el modo con el que containerd crea su raíz por defecto.
+      file:
+        path: "{{ docker_containerd_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0711"
+
+    - name: Configurar la raíz de containerd con un drop-in de systemd
+      # Se pasa --root en la línea de comandos en vez de editar
+      # /etc/containerd/config.toml porque ese fichero es un conffile del
+      # paquete containerd.io: si se modifica, una actualización puede quedarse
+      # preguntando qué versión conservar. El flag tiene prioridad sobre el
+      # config.toml. El ExecStart vacío borra el del unit original.
+      copy:
+        dest: "{{ docker_containerd_dropin }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/containerd --root {{ docker_containerd_root }}
+      register: docker_containerd_dropin_result
+
+    - name: Comprobar si queda la raíz antigua de containerd
+      stat:
+        path: "{{ docker_containerd_old_root }}"
+      register: docker_containerd_old_root_stat
+
+    - name: Mover la raíz de containerd a /home
+      # Se ejecuta cuando cambia el drop-in (instalación nueva o primera
+      # pasada con esta versión del playbook) o cuando sigue existiendo
+      # /var/lib/containerd. En una instalación nueva solo hay unas carpetas
+      # vacías; en una existente se mueven las imágenes y contenedores.
+      # Los contenedores en marcha se paran; los que tengan política de
+      # reinicio vuelven a arrancar con Docker.
+      when: >-
+        docker_containerd_dropin_result.changed or
+        (docker_containerd_old_root_stat.stat.exists and
+         docker_containerd_old_root_stat.stat.isdir and
+         not docker_containerd_old_root_stat.stat.islnk)
+      block:
+        - name: Recargar systemd para leer el drop-in de containerd
+          systemd:
+            daemon_reload: true
+
+        - name: Parar Docker y containerd antes de mover los datos
+          # Primero docker.socket: si no, una petición al socket vuelve a
+          # arrancar docker.service mientras se copian los datos.
+          systemd:
+            name: "{{ item }}"
+            state: stopped
+          loop:
+            - docker.socket
+            - docker.service
+            - containerd.service
+
+        - name: Copiar /var/lib/containerd a /home/containerd
+          # -H enlaces duros, -A ACL, -X xattrs. Si falla, el playbook se
+          # detiene aquí: los datos originales siguen intactos y los servicios
+          # quedan parados para que se revise a mano.
+          command: >-
+            rsync -aHAX --numeric-ids
+            {{ docker_containerd_old_root }}/ {{ docker_containerd_root }}/
+          when:
+            - docker_containerd_old_root_stat.stat.exists
+            - docker_containerd_old_root_stat.stat.isdir
+            - not docker_containerd_old_root_stat.stat.islnk
+
+        - name: Borrar la raíz antigua de containerd para liberar la partición raíz
+          file:
+            path: "{{ docker_containerd_old_root }}"
+            state: absent
+          when:
+            - docker_containerd_old_root_stat.stat.exists
+            - docker_containerd_old_root_stat.stat.isdir
+            - not docker_containerd_old_root_stat.stat.islnk
+
+        - name: Arrancar containerd y Docker con la nueva raíz
+          systemd:
+            name: "{{ item }}"
+            state: started
+          loop:
+            - containerd.service
+            - docker.socket
+            - docker.service
 
     - name: Asegurar que el servicio Docker esté activo y habilitado
       service:
